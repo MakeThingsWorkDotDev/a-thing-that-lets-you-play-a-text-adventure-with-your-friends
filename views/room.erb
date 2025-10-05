@@ -1,0 +1,136 @@
+<div class="max-w-4xl mx-auto my-12 p-5">
+  <div class="flex justify-between items-center mb-5">
+    <div>
+      <a href="/" class="text-blue-600 no-underline hover:underline">&larr; Back to Rooms</a>
+      <h1 class="mt-2 mb-0 text-2xl font-bold"><%= @room[:name] %></h1>
+      <% if @room[:description] && !@room[:description].empty? %>
+        <p class="mt-1 mb-0 text-gray-600"><%= @room[:description] %></p>
+      <% end %>
+    </div>
+    <div>
+      <span class="text-gray-600">Logged in as: <strong><%= @username %></strong></span>
+      <% if @is_admin %>
+        <span class="text-green-600 ml-2">(Admin)</span>
+      <% end %>
+    </div>
+  </div>
+
+  <% if @can_manage_players %>
+    <div class="mb-4 p-4 border border-gray-300 rounded bg-white">
+      <h2 class="text-lg font-semibold mb-3">Manage Players</h2>
+
+      <div class="mb-3">
+        <h3 class="text-sm font-semibold mb-2">Current Players:</h3>
+        <div class="flex flex-wrap gap-2">
+          <% @room_players.each do |player| %>
+            <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+              <%= player[:username] %><%= player[:is_ai] ? ' (AI)' : '' %>
+            </span>
+          <% end %>
+        </div>
+      </div>
+
+      <% if @available_users && @available_users.length > 0 %>
+        <form method="post" action="/rooms/<%= @room_id %>/add-player" class="flex gap-2 items-end">
+          <div class="flex-1">
+            <label for="player_id" class="block text-sm font-medium mb-1">Add Player:</label>
+            <select id="player_id" name="player_id" required class="w-full p-2 border border-gray-300 rounded">
+              <option value="">Select a player...</option>
+              <% @available_users.each do |u| %>
+                <option value="<%= u[:id] %>"><%= u[:username] %><%= u[:is_ai] ? ' (AI)' : '' %></option>
+              <% end %>
+            </select>
+          </div>
+          <button type="submit" class="py-2 px-4 bg-green-600 text-white rounded hover:bg-green-700">Add</button>
+        </form>
+      <% else %>
+        <p class="text-sm text-gray-600 italic">All users have been added to this room.</p>
+      <% end %>
+    </div>
+  <% end %>
+
+  <div id="messages" class="h-96 overflow-y-auto border border-gray-300 p-2 mb-2 bg-gray-50 rounded font-mono"></div>
+
+  <form id="messageForm" class="flex gap-2">
+    <input type="text" id="messageInput" placeholder="Type a message..." required class="flex-1 p-1 border border-gray-300 rounded">
+    <button type="submit" id="sendButton" class="py-1 px-4 bg-blue-600 text-white rounded hover:bg-blue-700">Send</button>
+  </form>
+</div>
+
+<script>
+  const roomId = <%= @room_id %>;
+  const currentUserId = <%= current_user[:id] %>;
+  const ws = new WebSocket(`ws://${window.location.host}/ws?room_id=${roomId}`);
+  const messages = document.getElementById('messages');
+  const messageForm = document.getElementById('messageForm');
+  const messageInput = document.getElementById('messageInput');
+
+  // Load chat history
+  const chatHistory = <%= @chat_history.to_json %>;
+  chatHistory.forEach(msg => {
+    messages.insertAdjacentHTML('beforeend', msg.html);
+  });
+
+  ws.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    if(data.type != "ping"){
+      // Check if this is the current user's own message
+      if (data.user_id === currentUserId) {
+        // Don't display - already shown locally
+        return;
+      }
+      messages.insertAdjacentHTML('beforeend', data.html);
+      messages.scrollTop = messages.scrollHeight;
+    }
+  };
+
+  messageForm.onsubmit = function(e) {
+    e.preventDefault();
+
+    const message = messageInput.value.trim();
+
+    if (message) {
+      // Send to server to get rendered HTML
+      fetch(`/rooms/${roomId}/render-message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message: message })
+      })
+      .then(response => response.json())
+      .then(data => {
+        // Display own message locally
+        messages.insertAdjacentHTML('beforeend', data.html);
+        messages.scrollTop = messages.scrollHeight;
+      });
+
+      // Send to server for broadcast
+      ws.send(JSON.stringify({
+        message: message,
+        room_id: roomId
+      }));
+
+      messageInput.value = '';
+    }
+  };
+
+  ws.onopen = function() {
+    console.log('Connected to chat');
+    const connectedMsg = '<div class="text-gray-600 italic text-center my-2">Connected to chat</div>';
+    messages.insertAdjacentHTML('beforeend', connectedMsg);
+  };
+
+  ws.onclose = function() {
+    console.log('Disconnected from chat');
+    const disconnectedMsg = '<div class="text-red-600 italic text-center my-2">Disconnected from chat - please refresh to reconnect</div>';
+    messages.insertAdjacentHTML('beforeend', disconnectedMsg);
+  };
+
+  ws.onerror = function(error) {
+    console.error('WebSocket error:', error);
+  };
+
+  // Focus on message input
+  messageInput.focus();
+</script>
