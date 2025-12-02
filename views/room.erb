@@ -1,29 +1,31 @@
-<div class="max-w-4xl mx-auto my-12 p-5">
+<div class="max-w-4xl mx-auto px-5">
   <div class="flex justify-between items-center mb-5">
     <div>
-      <a href="/" class="text-blue-600 no-underline hover:underline">&larr; Back to Rooms</a>
+      <a href="/" class="no-underline hover:underline">&larr; Back to Rooms</a>
       <h1 class="mt-2 mb-0 text-2xl font-bold"><%= @room[:name] %></h1>
       <% if @room[:description] && !@room[:description].empty? %>
-        <p class="mt-1 mb-0 text-gray-600"><%= @room[:description] %></p>
+        <p class="mt-1 mb-0"><%= @room[:description] %></p>
       <% end %>
     </div>
-    <div>
-      <span class="text-gray-600">Logged in as: <strong><%= @username %></strong></span>
-      <% if @is_admin %>
-        <span class="text-green-600 ml-2">(Admin)</span>
+    <div class="text-right">
+      <div>
+        <span>Logged in as: <strong><%= @username %></strong></span>
+      </div>
+      <% if @can_manage_players %>
+        <button id="togglePlayers" class="mt-1 text-sm text-terminal-green-500 hover:underline cursor-pointer">⚙</button>
       <% end %>
     </div>
   </div>
 
   <% if @can_manage_players %>
-    <div class="mb-4 p-4 border border-gray-300 rounded bg-white">
+    <div id="managePlayers" class="hidden mb-4 p-4 border border-3 border-dashed border-terminal-green-500">
       <h2 class="text-lg font-semibold mb-3">Manage Players</h2>
 
       <div class="mb-3">
         <h3 class="text-sm font-semibold mb-2">Current Players:</h3>
         <div class="flex flex-wrap gap-2">
           <% @room_players.each do |player| %>
-            <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+            <span class="px-1 text-xs border border-1 rounded border-dashed">
               <%= player[:username] %><%= player[:is_ai] ? ' (AI)' : '' %>
             </span>
           <% end %>
@@ -34,14 +36,14 @@
         <form method="post" action="/rooms/<%= @room_id %>/add-player" class="flex gap-2 items-end">
           <div class="flex-1">
             <label for="player_id" class="block text-sm font-medium mb-1">Add Player:</label>
-            <select id="player_id" name="player_id" required class="w-full p-2 border border-gray-300 rounded">
+            <select id="player_id" name="player_id" required class="w-full p-2 border-2 border-terminal-green-500">
               <option value="">Select a player...</option>
               <% @available_users.each do |u| %>
                 <option value="<%= u[:id] %>"><%= u[:username] %><%= u[:is_ai] ? ' (AI)' : '' %></option>
               <% end %>
             </select>
           </div>
-          <button type="submit" class="py-2 px-4 bg-green-600 text-white rounded hover:bg-green-700">Add</button>
+          <%= submit_button('Add') %>
         </form>
       <% else %>
         <p class="text-sm text-gray-600 italic">All users have been added to this room.</p>
@@ -49,11 +51,49 @@
     </div>
   <% end %>
 
-  <div id="messages" class="h-96 overflow-y-auto border border-gray-300 p-2 mb-2 bg-gray-50 rounded font-mono"></div>
+  <% if @can_manage_players %>
+    <div class="mb-2 p-2 border border-2 border-terminal-green-500 text-sm">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-semibold">Mute Controls:</span>
+        <% @room_players.each do |player| %>
+          <% if player[:id] == @room[:game_master_id] %>
+            <span class="px-2 py-1 text-xs text-terminal-green-500">
+              <%= player[:username] %> [GM]
+            </span>
+          <% else %>
+            <button
+              class="mute-toggle px-2 py-1 border border-terminal-green-500 <%= player[:is_muted] ? 'bg-terminal-green-500 text-black' : 'bg-transparent text-terminal-green-500' %> hover:opacity-80 cursor-pointer text-xs"
+              data-player-id="<%= player[:id] %>"
+              data-is-muted="<%= player[:is_muted] %>">
+              <%= player[:username] %> <%= player[:is_muted] ? '[MUTED]' : '' %><%= player[:hand_raised] ? ' ✋' : '' %>
+            </button>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
 
-  <form id="messageForm" class="flex gap-2">
-    <input type="text" id="messageInput" placeholder="Type a message..." required class="flex-1 p-1 border border-gray-300 rounded">
-    <button type="submit" id="sendButton" class="py-1 px-4 bg-blue-600 text-white rounded hover:bg-blue-700">Send</button>
+  <% if @is_muted %>
+    <div id="mutedNotice" class="mb-2 p-2 border border-2 border-terminal-magenta text-terminal-magenta text-sm text-center">
+      You are currently muted by the Game Master
+      <button id="raiseHandBtn" class="ml-2 px-2 py-1 border border-terminal-magenta hover:bg-terminal-magenta hover:text-black text-xs">
+        <%= @hand_raised ? '✋ Lower Hand' : 'Raise Hand ✋' %>
+      </button>
+    </div>
+  <% end %>
+
+  <div id="messages" class="h-96 overflow-y-auto border border-3 border-dashed border-terminal-green-500 p-2 mb-2 uppercase">
+    <% if @total_messages <= 15 %>
+      <div id="beginning" class="text-center my-2 text-white border-b-3 border-white pb-2 border-dashed">~~ So Thy Journey Beginnith ~~</div>
+    <% end %>
+    <% @chat_history.each do |msg| %>
+      <%= render_message(msg[:user_id], msg[:username], msg[:message], @room_id, is_own: msg[:user_id] == current_user[:id], data: msg[:data]) %>
+    <% end %>
+  </div>
+
+  <form id="messageForm" class="flex gap-2" autocomplete="off">
+    <input type="text" id="messageInput" placeholder="Type a message..." required class="flex-1 p-1 border border-terminal-green-500 border-2" <%= @is_muted ? 'disabled' : '' %>>
+    <%= submit_button('Send') %>
   </form>
 </div>
 
@@ -65,47 +105,219 @@
   const messageForm = document.getElementById('messageForm');
   const messageInput = document.getElementById('messageInput');
 
-  // Load chat history
-  const chatHistory = <%= @chat_history.to_json %>;
-  chatHistory.forEach(msg => {
-    messages.insertAdjacentHTML('beforeend', msg.html);
+  let totalMessages = <%= @total_messages %>;
+  let loadedMessages = <%= @chat_history.length %>;
+  let isLoading = false;
+  let isMuted = <%= @is_muted ? 'true' : 'false' %>;
+  let handRaised = <%= @hand_raised ? 'true' : 'false' %>;
+
+
+  // Toggle manage players section
+  const togglePlayersBtn = document.getElementById('togglePlayers');
+  const managePlayers = document.getElementById('managePlayers');
+  if (togglePlayersBtn && managePlayers) {
+    togglePlayersBtn.onclick = function() {
+      managePlayers.classList.toggle('hidden');
+    };
+  }
+
+  // Handle mute toggle buttons
+  const muteToggleButtons = document.querySelectorAll('.mute-toggle');
+  muteToggleButtons.forEach(button => {
+    button.addEventListener('click', function() {
+      const playerId = this.getAttribute('data-player-id');
+
+      fetch(`/rooms/${roomId}/toggle-mute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ player_id: playerId })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          // Update button state
+          const isMuted = data.is_muted;
+          this.setAttribute('data-is-muted', isMuted);
+
+          if (isMuted) {
+            this.classList.add('bg-terminal-green-500', 'text-black');
+            this.classList.remove('bg-transparent', 'text-terminal-green-500');
+            this.textContent = this.textContent.replace('[MUTED]', '').trim() + ' [MUTED]';
+          } else {
+            this.classList.remove('bg-terminal-green-500', 'text-black');
+            this.classList.add('bg-transparent', 'text-terminal-green-500');
+            this.textContent = this.textContent.replace(' [MUTED]', '');
+          }
+        }
+      })
+      .catch(err => console.error('Failed to toggle mute:', err));
+    });
+  });
+
+  // Function to update mute status UI
+  function updateMuteStatus(userId, isMutedStatus) {
+    if (userId === currentUserId) {
+      isMuted = isMutedStatus;
+
+      // Update input field
+      if (isMuted) {
+        messageInput.disabled = true;
+        messageInput.placeholder = "You are muted by the Game Master";
+
+        // Show muted notice if it doesn't exist
+        if (!document.getElementById('mutedNotice')) {
+          const notice = document.createElement('div');
+          notice.id = 'mutedNotice';
+          notice.className = 'mb-2 p-2 border border-2 border-terminal-magenta text-terminal-magenta text-sm text-center';
+          notice.textContent = 'You are currently muted by the Game Master';
+          messageForm.insertAdjacentElement('beforebegin', notice);
+        }
+      } else {
+        messageInput.disabled = false;
+        messageInput.placeholder = "Type a message...";
+
+        // Remove muted notice
+        const notice = document.getElementById('mutedNotice');
+        if (notice) {
+          notice.remove();
+        }
+      }
+    }
+
+    // Update mute button state if it exists
+    const muteButton = document.querySelector(`.mute-toggle[data-player-id="${userId}"]`);
+    if (muteButton) {
+      muteButton.setAttribute('data-is-muted', isMutedStatus);
+
+      if (isMutedStatus) {
+        muteButton.classList.add('bg-terminal-green-500', 'text-black');
+        muteButton.classList.remove('bg-transparent', 'text-terminal-green-500');
+        if (!muteButton.textContent.includes('[MUTED]')) {
+          muteButton.textContent = muteButton.textContent.trim() + ' [MUTED]';
+        }
+      } else {
+        muteButton.classList.remove('bg-terminal-green-500', 'text-black');
+        muteButton.classList.add('bg-transparent', 'text-terminal-green-500');
+        muteButton.textContent = muteButton.textContent.replace(' [MUTED]', '');
+      }
+    }
+  }
+
+  // Handle raise/lower hand button
+  const raiseHandBtn = document.getElementById('raiseHandBtn');
+  if (raiseHandBtn) {
+    raiseHandBtn.addEventListener('click', function() {
+      const endpoint = handRaised ? `/rooms/${roomId}/lower-hand` : `/rooms/${roomId}/raise-hand`;
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          handRaised = data.hand_raised;
+          this.textContent = handRaised ? '✋ Lower Hand' : 'Raise Hand ✋';
+        }
+      })
+      .catch(err => console.error('Failed to toggle hand:', err));
+    });
+  }
+
+  // Function to update hand raised status UI
+  function updateHandStatus(userId, isRaised) {
+    // Update mute button to show/hide hand emoji
+    const muteButton = document.querySelector(`.mute-toggle[data-player-id="${userId}"]`);
+    if (muteButton) {
+      const baseText = muteButton.textContent.replace(' ✋', '').replace(' [MUTED]', '');
+      const isMuted = muteButton.getAttribute('data-is-muted') === 'true';
+      muteButton.textContent = baseText + (isMuted ? ' [MUTED]' : '') + (isRaised ? ' ✋' : '');
+    }
+
+    // If this is current user, update local state
+    if (userId === currentUserId) {
+      handRaised = isRaised;
+      if (raiseHandBtn) {
+        raiseHandBtn.textContent = isRaised ? '✋ Lower Hand' : 'Raise Hand ✋';
+      }
+    }
+  }
+
+  // Infinite scroll - load older messages
+  messages.addEventListener('scroll', function() {
+    if (isLoading || loadedMessages >= totalMessages) return;
+
+    if (messages.scrollTop < 100) {
+      isLoading = true;
+      const previousScrollHeight = messages.scrollHeight;
+
+      fetch(`/rooms/${roomId}/messages?offset=${loadedMessages}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.messages.length > 0) {
+            const fragment = data.messages.join('');
+            const firstChild = messages.firstChild;
+
+            if (firstChild && firstChild.id === 'beginning') {
+              firstChild.insertAdjacentHTML('afterend', fragment);
+            } else {
+              messages.insertAdjacentHTML('afterbegin', fragment);
+            }
+
+            loadedMessages += data.messages.length;
+
+            // Maintain scroll position
+            const newScrollHeight = messages.scrollHeight;
+            messages.scrollTop = newScrollHeight - previousScrollHeight;
+          }
+
+          // Show beginning message when all messages loaded
+          if (loadedMessages >= totalMessages && !document.getElementById('beginning')) {
+            messages.insertAdjacentHTML('afterbegin', '<div id="beginning" class="text-center my-2 text-white  border-b-3 border-white pb-2 border-dashed">~~ So Thy Journey Beginnith ~~</div>');
+          }
+
+          isLoading = false;
+        })
+        .catch(err => {
+          console.error('Failed to load messages:', err);
+          isLoading = false;
+        });
+    }
   });
 
   ws.onmessage = function(event) {
     const data = JSON.parse(event.data);
-    if(data.type != "ping"){
-      // Check if this is the current user's own message
-      if (data.user_id === currentUserId) {
-        // Don't display - already shown locally
-        return;
-      }
+
+    if (data.type === "mute_status") {
+      // Handle mute status change
+      updateMuteStatus(data.user_id, data.is_muted);
+    } else if (data.type === "hand_raised") {
+      // Handle hand raised status change
+      updateHandStatus(data.user_id, data.raised);
+    } else if (data.type != "ping") {
+      // Handle regular chat messages
       messages.insertAdjacentHTML('beforeend', data.html);
       messages.scrollTop = messages.scrollHeight;
+      totalMessages++;
+      loadedMessages++;
     }
   };
 
   messageForm.onsubmit = function(e) {
     e.preventDefault();
 
+    // Prevent muted users from sending messages
+    if (isMuted) {
+      return false;
+    }
+
     const message = messageInput.value.trim();
 
     if (message) {
-      // Send to server to get rendered HTML
-      fetch(`/rooms/${roomId}/render-message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ message: message })
-      })
-      .then(response => response.json())
-      .then(data => {
-        // Display own message locally
-        messages.insertAdjacentHTML('beforeend', data.html);
-        messages.scrollTop = messages.scrollHeight;
-      });
-
-      // Send to server for broadcast
       ws.send(JSON.stringify({
         message: message,
         room_id: roomId
@@ -115,21 +327,18 @@
     }
   };
 
-  ws.onopen = function() {
-    console.log('Connected to chat');
-    const connectedMsg = '<div class="text-gray-600 italic text-center my-2">Connected to chat</div>';
-    messages.insertAdjacentHTML('beforeend', connectedMsg);
-  };
-
   ws.onclose = function() {
     console.log('Disconnected from chat');
-    const disconnectedMsg = '<div class="text-red-600 italic text-center my-2">Disconnected from chat - please refresh to reconnect</div>';
+    const disconnectedMsg = '<div class="text-center my-2 text-terminal-magenta">[SYS] Disconnected from chat - please refresh to reconnect</div>';
     messages.insertAdjacentHTML('beforeend', disconnectedMsg);
   };
 
   ws.onerror = function(error) {
     console.error('WebSocket error:', error);
   };
+
+  // Scroll to bottom on page load
+  messages.scrollTop = messages.scrollHeight;
 
   // Focus on message input
   messageInput.focus();

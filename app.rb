@@ -4,22 +4,32 @@ require 'json'
 require 'sequel'
 require 'securerandom'
 require 'bcrypt'
+require 'securerandom'
+require 'cgi'
 
 set :sockets, {}  # Changed to hash to namespace by room_id
+set :sockets_mutex, Mutex.new
+set :ai_game_masters, {}  # Track AI Game Master instances by room_id
+set :ai_gm_mutex, Mutex.new
+set :session_secret, ENV.fetch('SESSION_SECRET') { SecureRandom.hex(64) }
 enable :sessions
 
 require_relative 'initializers/db.rb'
+require_relative 'initializers/dice_roll.rb'
+require_relative 'lib/ai_game_master.rb'
 
 # WebSocket ping thread - keeps connections alive
 Thread.new do
   loop do
     sleep 5
-    settings.sockets.each do |room_id, sockets|
-      sockets.each do |socket|
-        begin
-          socket.send(JSON.generate({type: "ping", message: Time.now.to_i})) if socket
-        rescue => e
-          puts "Ping error: #{e.message}"
+    settings.sockets_mutex.synchronize do
+      settings.sockets.each do |room_id, sockets|
+        sockets.each do |socket|
+          begin
+            socket.send(JSON.generate({type: "ping", message: Time.now.to_i})) if socket
+          rescue => e
+            puts "Ping error: #{e.message}"
+          end
         end
       end
     end
@@ -33,16 +43,43 @@ def current_user
   DB[:users].where(id: session[:user_id]).first
 end
 
-def render_message(user_id, username, message, room_id, is_own: false)
+def render_message(user_id, username, message, room_id, is_own: false, data: nil)
   room = DB[:rooms].where(id: room_id).first
   user = DB[:users].where(id: user_id).first
+
+  # Parse data if it's a JSON string, handle empty or nil data
+  parsed_data = nil
+  if data && data != "{}"
+    parsed_data = data.is_a?(String) ? JSON.parse(data) : data
+  end
+
+  # Check if this is a dice roll message
+  if parsed_data && parsed_data['type'] == 'dice_roll'
+    return erb :'messages/_dice_roll_message', locals: {
+      username: username,
+      dice_data: parsed_data,
+      user_id: user_id
+    }, layout: false
+  end
 
   # Determine if this is a GM message
   is_gm = user_id == room[:game_master_id]
 
   template = is_gm ? :'messages/_gm_message' : :'messages/_player_message'
 
-  erb template, locals: { username: username, message: message, is_own: is_own }, layout: false
+  erb template, locals: { username: username, message: message, is_own: is_own, user_id: user_id }, layout: false
+end
+
+def link_button(href, text)
+  erb :'buttons/_link_button', locals: { href: href, text: text }, layout: false
+end
+
+def submit_button(text)
+  erb :'buttons/_submit_button', locals: { text: text }, layout: false
+end
+
+def ascii_dice(dice_type, value)
+  erb :"ascii/_d#{dice_type}.html", locals: { value: value }, layout: false
 end
 
 def require_auth
@@ -245,6 +282,21 @@ post '/rooms' do
       room_id: room_id
     )
 
+    # Initialize AI Game Master if GM is AI
+    ai_user = DB[:users].where(is_ai: true).first
+    if ai_user && game_master_id == ai_user[:id]
+      settings.ai_gm_mutex.synchronize do
+        settings.ai_game_masters[room_id] = AIGameMaster.new(
+          room_id,
+          name,
+          description || "",
+          DB,
+          settings.sockets,
+          settings.sockets_mutex
+        )
+      end
+    end
+
     redirect "/rooms/#{room_id}"
   else
     @error = "Room name is required"
@@ -277,12 +329,33 @@ get '/rooms/:id' do
     @can_manage_players = (user[:id] == @room[:game_master_id]) ||
                           (user[:id] == @room[:created_by] && game_master && game_master[:is_ai])
 
-    # Get current players in the room
+    # Get current players in the room with mute status and hand raised
     @room_players = DB[:users]
       .join(:user_rooms, user_id: :id)
       .where(room_id: room_id)
-      .select(Sequel[:users][:id], Sequel[:users][:username], Sequel[:users][:is_ai])
+      .select(Sequel[:users][:id], Sequel[:users][:username], Sequel[:users][:is_ai], Sequel[:user_rooms][:is_muted], Sequel[:user_rooms][:hand_raised])
       .all
+
+    # Get current user's mute and hand raised status
+    @is_muted = access[:is_muted]
+    @hand_raised = access[:hand_raised]
+
+    # Restore AI Game Master if needed (after server restart)
+    if game_master && game_master[:is_ai] && !settings.ai_game_masters[room_id]
+      settings.ai_gm_mutex.synchronize do
+        unless settings.ai_game_masters[room_id]
+          settings.ai_game_masters[room_id] = AIGameMaster.new(
+            room_id,
+            @room[:name],
+            @room[:description] || "",
+            DB,
+            settings.sockets,
+            settings.sockets_mutex,
+            restore: true  # Flag to skip initial narration
+          )
+        end
+      end
+    end
 
     # Get users not in the room
     player_ids = @room_players.map { |p| p[:id] }
@@ -291,27 +364,68 @@ get '/rooms/:id' do
       .select(:id, :username, :is_ai)
       .all
 
-    # Get chat history with rendered HTML
-    messages_data = DB[:chat_messages]
+    # Get total message count
+    @total_messages = DB[:chat_messages].where(room_id: room_id).count
+
+    # Get last 15 messages for chat history
+    @chat_history = DB[:chat_messages]
       .join(:users, id: :user_id)
       .where(room_id: room_id)
       .order(Sequel[:chat_messages][:created_at])
+      .reverse
+      .limit(15)
       .select(
         Sequel[:chat_messages][:message],
+        Sequel[:chat_messages][:data],
         Sequel[:users][:username],
         Sequel[:users][:is_admin],
         Sequel[:chat_messages][:user_id]
       )
       .all
-
-    @chat_history = messages_data.map do |msg|
-      {
-        html: render_message(msg[:user_id], msg[:username], msg[:message], room_id, is_own: msg[:user_id] == user[:id])
-      }
-    end
+      .reverse
 
     erb :room
   end
+end
+
+# Fetch older messages for infinite scroll
+get '/rooms/:id/messages' do
+  user = current_user
+  halt 401 unless user
+
+  room_id = params[:id].to_i
+  offset = params[:offset]&.to_i || 0
+
+  # Verify access
+  access = DB[:user_rooms].where(user_id: user[:id], room_id: room_id).first
+  halt 403 unless access
+
+  content_type :json
+
+  # Get 15 older messages
+  messages = DB[:chat_messages]
+    .join(:users, id: :user_id)
+    .where(room_id: room_id)
+    .order(Sequel[:chat_messages][:created_at])
+    .reverse
+    .limit(15)
+    .offset(offset)
+    .select(
+      Sequel[:chat_messages][:message],
+      Sequel[:chat_messages][:data],
+      Sequel[:users][:username],
+      Sequel[:users][:is_admin],
+      Sequel[:chat_messages][:user_id]
+    )
+    .all
+    .reverse
+
+  # Render messages to HTML
+  html_messages = messages.map do |msg|
+    render_message(msg[:user_id], msg[:username], msg[:message], room_id, is_own: msg[:user_id] == user[:id], data: msg[:data])
+  end
+
+  { messages: html_messages }.to_json
 end
 
 # Add player to room
@@ -343,9 +457,153 @@ post '/rooms/:id/add-player' do
       user_id: player_id,
       room_id: room_id
     )
+
+    # Notify AI Game Master if applicable
+    ai_gm = settings.ai_game_masters[room_id]
+    if ai_gm
+      player = DB[:users].where(id: player_id).first
+      Thread.new { ai_gm.handle_player_joined(player[:username]) }
+    end
   end
 
   redirect "/rooms/#{room_id}"
+end
+
+# Toggle mute status for a player in a room
+post '/rooms/:id/toggle-mute' do
+  user = current_user
+  halt 401 unless user
+
+  room_id = params[:id].to_i
+
+  # Parse JSON body
+  request.body.rewind
+  data = JSON.parse(request.body.read)
+  player_id = data['player_id']&.to_i
+
+  content_type :json
+
+  # Verify user has access to this room
+  access = DB[:user_rooms].where(user_id: user[:id], room_id: room_id).first
+  halt 403, { error: "Access denied" }.to_json unless access
+
+  room = DB[:rooms].where(id: room_id).first
+  halt 404, { error: "Room not found" }.to_json unless room
+
+  # Check if user can manage players (is GM or is creator when GM is AI)
+  game_master = DB[:users].where(id: room[:game_master_id]).first
+  can_manage = (user[:id] == room[:game_master_id]) ||
+               (user[:id] == room[:created_by] && game_master && game_master[:is_ai])
+
+  halt 403, { error: "Not authorized" }.to_json unless can_manage
+
+  # Prevent GM from muting themselves
+  if player_id == room[:game_master_id]
+    halt 403, { error: "Cannot mute the Game Master" }.to_json
+  end
+
+  # Get the user_room record
+  user_room = DB[:user_rooms].where(user_id: player_id, room_id: room_id).first
+  halt 404, { error: "Player not in room" }.to_json unless user_room
+
+  # Toggle mute status
+  new_mute_status = !user_room[:is_muted]
+  DB[:user_rooms].where(user_id: player_id, room_id: room_id).update(is_muted: new_mute_status)
+
+  # Get player username
+  player = DB[:users].where(id: player_id).first
+
+  # Broadcast mute status change to all users in the room
+  broadcast_data = {
+    type: 'mute_status',
+    user_id: player_id,
+    is_muted: new_mute_status,
+    username: player[:username]
+  }
+
+  settings.sockets_mutex.synchronize do
+    if settings.sockets[room_id]
+      settings.sockets[room_id].each do |socket|
+        socket.send(JSON.generate(broadcast_data))
+      end
+    end
+  end
+
+  { success: true, is_muted: new_mute_status }.to_json
+end
+
+# Raise hand
+post '/rooms/:id/raise-hand' do
+  user = current_user
+  halt 401 unless user
+
+  room_id = params[:id].to_i
+  content_type :json
+
+  # Verify user has access to this room
+  access = DB[:user_rooms].where(user_id: user[:id], room_id: room_id).first
+  halt 403, { error: "Access denied" }.to_json unless access
+
+  # Set hand_raised to true
+  DB[:user_rooms].where(user_id: user[:id], room_id: room_id).update(hand_raised: true)
+
+  # Broadcast hand raised status
+  broadcast_data = {
+    type: 'hand_raised',
+    user_id: user[:id],
+    username: user[:username],
+    raised: true
+  }
+
+  settings.sockets_mutex.synchronize do
+    if settings.sockets[room_id]
+      settings.sockets[room_id].each do |socket|
+        socket.send(JSON.generate(broadcast_data))
+      end
+    end
+  end
+
+  # Notify AI Game Master if applicable
+  ai_gm = settings.ai_game_masters[room_id]
+  if ai_gm
+    Thread.new { ai_gm.handle_hand_raised(user[:username]) }
+  end
+
+  { success: true, hand_raised: true }.to_json
+end
+
+# Lower hand
+post '/rooms/:id/lower-hand' do
+  user = current_user
+  halt 401 unless user
+
+  room_id = params[:id].to_i
+  content_type :json
+
+  # Verify user has access to this room
+  access = DB[:user_rooms].where(user_id: user[:id], room_id: room_id).first
+  halt 403, { error: "Access denied" }.to_json unless access
+
+  # Set hand_raised to false
+  DB[:user_rooms].where(user_id: user[:id], room_id: room_id).update(hand_raised: false)
+
+  # Broadcast hand lowered status
+  broadcast_data = {
+    type: 'hand_raised',
+    user_id: user[:id],
+    username: user[:username],
+    raised: false
+  }
+
+  settings.sockets_mutex.synchronize do
+    if settings.sockets[room_id]
+      settings.sockets[room_id].each do |socket|
+        socket.send(JSON.generate(broadcast_data))
+      end
+    end
+  end
+
+  { success: true, hand_raised: false }.to_json
 end
 
 # Render message HTML for current user
@@ -358,9 +616,36 @@ post '/rooms/:id/render-message' do
 
   request.body.rewind
   data = JSON.parse(request.body.read)
-  message = data['message']
+  message_text = data['message']
+  data_json = '{}'
 
-  html = render_message(user[:id], user[:username], message, room_id, is_own: true)
+  # Check if this is a dice roll command
+  if message_text =~ /^\/roll\s+(.+)/
+    dice_command = $1
+
+    begin
+      # Use DiceRoll class to roll the dice
+      dice_roll = DiceRoll.new(dice_command)
+
+      # Prepare data to store
+      dice_data = {
+        type: 'dice_roll',
+        command: dice_command,
+        result_dice: dice_roll.result_dice,
+        modifiers: dice_roll.modifiers,
+        dice_total: dice_roll.result_dice.sum(&:first),
+        total: dice_roll.total
+      }
+
+      data_json = JSON.generate(dice_data)
+      message_text = '' # Clear the message text for dice rolls
+    rescue => e
+      puts "Dice roll error: #{e.message}"
+      # If there's an error, treat it as a normal message
+    end
+  end
+
+  html = render_message(user[:id], user[:username], message_text, room_id, is_own: true, data: data_json)
 
   { html: html }.to_json
 end
@@ -452,23 +737,61 @@ get '/ws' do
 
     ws.on :open do |event|
       # Initialize room array if it doesn't exist
-      settings.sockets[room_id] ||= []
-      settings.sockets[room_id] << ws
-      puts "Client connected: #{user[:username]} to room #{room_id}. Room total: #{settings.sockets[room_id].length}"
+      settings.sockets_mutex.synchronize do
+        settings.sockets[room_id] ||= []
+        settings.sockets[room_id] << ws
+        puts "Client connected: #{user[:username]} to room #{room_id}. Room total: #{settings.sockets[room_id].length}"
+      end
     end
 
     ws.on :message do |event|
       message = JSON.parse(event.data)
+      message_text = message['message']
+      data_json = '{}'
+
+      # Check if user is muted
+      user_room = DB[:user_rooms].where(user_id: user[:id], room_id: room_id).first
+      if user_room && user_room[:is_muted]
+        # Silently ignore messages from muted users
+        next
+      end
+
+      # Check if this is a dice roll command
+      if message_text =~ /^\/roll\s+(.+)/
+        dice_command = $1
+
+        begin
+          # Use DiceRoll class to roll the dice
+          dice_roll = DiceRoll.new(dice_command)
+
+          # Prepare data to store
+          data = {
+            type: 'dice_roll',
+            command: dice_command,
+            result_dice: dice_roll.result_dice,
+            modifiers: dice_roll.modifiers,
+            dice_total: dice_roll.result_dice.sum(&:first),
+            total: dice_roll.total
+          }
+
+          data_json = JSON.generate(data)
+          message_text = '' # Clear the message text for dice rolls
+        rescue => e
+          puts "Dice roll error: #{e.message}"
+          # If there's an error, treat it as a normal message
+        end
+      end
 
       # Save message to database
       DB[:chat_messages].insert(
         room_id: room_id,
         user_id: user[:id],
-        message: message['message']
+        message: message_text,
+        data: data_json
       )
 
       # Render message HTML
-      message_html = render_message(user[:id], user[:username], message['message'], room_id, is_own: false)
+      message_html = render_message(user[:id], user[:username], message_text, room_id, is_own: false, data: data_json)
 
       # Prepare broadcast message
       broadcast_data = {
@@ -476,22 +799,38 @@ get '/ws' do
         user_id: user[:id]
       }
 
-      # Broadcast message only to clients in the same room
-      if settings.sockets[room_id]
-        settings.sockets[room_id].each do |socket|
-          if socket != ws
+      # Broadcast message to ALL clients in the same room (including sender)
+      settings.sockets_mutex.synchronize do
+        if settings.sockets[room_id]
+          settings.sockets[room_id].each do |socket|
             socket.send(JSON.generate(broadcast_data))
           end
+        end
+      end
+
+      # Notify AI Game Master if applicable and not from AI
+      unless user[:is_ai]
+        ai_gm = settings.ai_game_masters[room_id]
+        if ai_gm
+          # Parse data if it exists
+          parsed_data = nil
+          if data_json && data_json != '{}'
+            parsed_data = JSON.parse(data_json)
+          end
+
+          Thread.new { ai_gm.handle_player_message(user[:username], message_text, parsed_data) }
         end
       end
     end
 
     ws.on :close do |event|
-      if settings.sockets[room_id]
-        settings.sockets[room_id].delete(ws)
-        puts "Client disconnected: #{user[:username]} from room #{room_id}. Room total: #{settings.sockets[room_id].length}"
-        # Clean up empty room arrays
-        settings.sockets.delete(room_id) if settings.sockets[room_id].empty?
+      settings.sockets_mutex.synchronize do
+        if settings.sockets[room_id]
+          settings.sockets[room_id].delete(ws)
+          puts "Client disconnected: #{user[:username]} from room #{room_id}. Room total: #{settings.sockets[room_id].length}"
+          # Clean up empty room arrays
+          settings.sockets.delete(room_id) if settings.sockets[room_id].empty?
+        end
       end
     end
 

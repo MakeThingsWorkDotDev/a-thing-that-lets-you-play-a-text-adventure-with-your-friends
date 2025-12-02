@@ -8,15 +8,15 @@
   <form method="post" action="/rooms">
     <div class="my-2">
       <label for="name" class="block mb-1">Room Name:</label>
-      <input type="text" id="name" name="name" required class="p-1 w-80 border border-gray-300 rounded">
+      <input type="text" autocomplete="off" id="name" name="name" required class="p-1 w-80 border border-terminal-green-500 border-2">
     </div>
     <div class="my-2">
       <label for="description" class="block mb-1">Description (optional):</label>
-      <textarea id="description" name="description" rows="3" class="p-1 w-80 border border-gray-300 rounded"></textarea>
+      <textarea id="description" name="description" rows="3" class="p-1 w-80 border border-terminal-green-500 border-2"></textarea>
     </div>
     <div class="my-2">
       <label for="game_master_id" class="block mb-1">Game Master:</label>
-      <select id="game_master_id" name="game_master_id" class="p-1 w-80 border border-gray-300 rounded">
+      <select id="game_master_id" name="game_master_id" class="p-1 w-80 border border-terminal-green-500">
         <% @users.each do |user| %>
           <option value="<%= user[:id] %>" <%= user[:id] == @current_user[:id] ? 'selected' : '' %>>
             <%= user[:username] %><%= user[:is_ai] ? ' (AI)' : '' %>
@@ -25,8 +25,8 @@
       </select>
     </div>
     <div class="my-5">
-      <button type="submit" class="py-2 px-5 bg-blue-600 text-white rounded hover:bg-blue-700">Create Room</button>
-      <a href="/" class="ml-2 py-2 px-5 bg-gray-600 text-white no-underline rounded hover:bg-gray-700 inline-block">Cancel</a>
+      <%= submit_button('Create Room') %>
+      <a href="/" class="ml-2 py-2 px-5 bg-red-600 text-white no-underline hover:bg-red-700 inline-block">Cancel</a>
     </div>
   </form>
 </div>

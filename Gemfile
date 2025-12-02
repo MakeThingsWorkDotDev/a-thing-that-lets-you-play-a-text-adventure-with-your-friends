@@ -9,3 +9,5 @@ gem "faye-websocket", "~> 0.12.0"
 gem "sequel", "~> 5.84"
 gem "sqlite3", "~> 1.7"
 gem "bcrypt", "~> 3.1"
+
+gem "ruby-openai", "~> 8.3"

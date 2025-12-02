@@ -1,3 +1,3 @@
-<div class="p-1 my-0.5 <%= is_own ? 'bg-blue-50 rounded' : '' %>">
-  <span class="font-bold text-blue-700"><%= Rack::Utils.escape_html(username) %></span>: <%= Rack::Utils.escape_html(message) %>
+<div class="p-1 my-0.5" data-user-id="<%= user_id %>">
+  <span class="text-terminal-green-800">&gt; <%= Rack::Utils.escape_html(username) %></span>: <%= Rack::Utils.escape_html(message) %>
 </div>

@@ -2,16 +2,16 @@
   <h1 class="text-2xl font-bold mb-4">Admin Panel</h1>
 
   <div class="my-5">
-    <a href="/" class="text-blue-600 no-underline hover:underline">&larr; Back to Chat</a>
+    <a href="/" class="no-underline hover:underline">&larr; Back to Chat</a>
   </div>
 
   <h2 class="text-xl font-semibold mb-3">Create Magic Link</h2>
-  <form method="post" action="/admin/create-link" class="my-5 p-5 border border-gray-300 rounded">
+  <form method="post" action="/admin/create-link" class="my-5 p-5 border border-3 border-dashed border-terminal-green-500">
     <div class="my-2">
       <label for="expires_hours" class="block mb-1">Expires in (hours, leave empty for permanent):</label>
-      <input type="number" id="expires_hours" name="expires_hours" min="1" class="p-1 w-28 border border-gray-300 rounded">
+      <input type="number" id="expires_hours" name="expires_hours" min="1" class="p-1 w-28 border border-terminal-green-500 border-2">
     </div>
-    <button type="submit" class="py-2 px-5 bg-green-600 text-white border-0 rounded hover:bg-green-700">Create Link</button>
+    <%= submit_button('Create Link') %>
   </form>
 
   <h2 class="text-xl font-semibold mb-3">Active Magic Links</h2>
@@ -20,9 +20,9 @@
   <% else %>
     <div class="my-5">
       <% @magic_links.each do |link| %>
-        <div class="border border-gray-300 p-4 my-2 bg-gray-50 rounded">
+        <div class="border border-3 border-dashed border-terminal-green-500 p-4 my-2">
           <div class="my-1"><strong>Link:</strong>
-            <code class="bg-gray-200 px-1 py-0.5 break-all font-mono text-sm">
+            <code class="px-1 py-0.5 break-all text-sm bg-black/50">
               http://<%= request.host_with_port %>/setup?token=<%= link[:token] %>
             </code>
           </div>
@@ -34,16 +34,10 @@
             <div class="my-1"><strong>Expires:</strong> Never</div>
           <% end %>
           <form method="post" action="/admin/deactivate-link/<%= link[:id] %>" class="my-2">
-            <button type="submit" class="py-1 px-2 bg-red-600 text-white border-0 rounded hover:bg-red-700">Deactivate</button>
+            <button type="submit" class="py-1 px-2 bg-red-600 text-white border-0 hover:bg-red-700 cursor-pointer">Deactivate</button>
           </form>
         </div>
       <% end %>
     </div>
   <% end %>
-
-  <div class="my-10 pt-5 border-t border-gray-300">
-    <form method="post" action="/logout">
-      <button type="submit" class="py-2 px-5 bg-gray-600 text-white border-0 rounded hover:bg-gray-700">Logout</button>
-    </form>
-  </div>
 </div>

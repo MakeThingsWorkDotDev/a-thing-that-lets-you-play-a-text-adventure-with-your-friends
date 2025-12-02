@@ -1,0 +1,15 @@
+<div class="p-4 mx-auto mb-2 border border-1 border-white text-center text-white max-w-max" data-user-id="<%= user_id %>">
+  <span class="underline"><%= Rack::Utils.escape_html(username) %></span> rolled:
+  <div class="my-1">
+    <% dice_data['result_dice'].each do |result, die_type| %>
+      <pre class="inline-block text-xs"><%= ascii_dice(die_type, result) %></pre>
+    <% end %>
+  </div>
+  <div>
+    <% if dice_data['modifiers'].any? %>
+      Total: <%= dice_data['dice_total'] %> <%= dice_data['modifiers'].join(' ') %> = <strong><%= dice_data['total'] %></strong>
+    <% else %>
+      Total: <strong><%= dice_data['total'] %></strong>
+    <% end %>
+  </div>
+</div>

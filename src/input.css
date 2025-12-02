@@ -1,1 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 @import "tailwindcss";
+
+@layer base {
+
+  @font-face {
+    font-family: 'VT323';
+    font-style: normal;
+    font-weight: 400;
+  }
+
+  @theme {
+    --color-terminal: #282823;
+    --color-terminal-green-500: #33ff33;
+    --color-terminal-green-800: #00ff00;
+    --color-terminal-yellow: #ffff00;
+    --color-terminal-gray: #666666;
+    --font-terminal: "VT323", monospace;
+  }
+
+  select {
+    border-radius: 0 !important;
+    outline: none !important;
+  }
+
+  select:focus,
+  select:active,
+  select:focus-visible,
+  input:focus,
+  input:active,
+  input:focus-visible {
+    outline: none !important;
+    border-radius: 0 !important;
+  }
+}
