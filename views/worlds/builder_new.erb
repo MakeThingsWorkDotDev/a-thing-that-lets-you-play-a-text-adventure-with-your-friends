@@ -1,0 +1,44 @@
+<div class="container mx-auto px-4 py-8 max-w-2xl">
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold mb-2 text-green-400">═══ CREATE WORLD TEMPLATE ═══</h1>
+    <p class="text-gray-400">Define the basic properties of your world</p>
+  </div>
+
+  <% if @error %>
+    <div class="border-2 border-red-600 p-4 bg-red-900 bg-opacity-30 mb-6">
+      <p class="text-red-400"><%= @error %></p>
+    </div>
+  <% end %>
+
+  <form method="post" action="/worlds/builder" class="space-y-6">
+    <div>
+      <label class="block text-green-400 mb-2 font-bold">World Name *</label>
+      <input
+        type="text"
+        name="name"
+        required
+        class="w-full bg-gray-900 border-2 border-green-700 text-white px-4 py-2 focus:outline-none focus:border-green-500"
+        placeholder="The Dark Forest, Dragon's Lair, etc."
+      />
+    </div>
+
+    <div>
+      <label class="block text-green-400 mb-2 font-bold">Description</label>
+      <textarea
+        name="description"
+        rows="4"
+        class="w-full bg-gray-900 border-2 border-green-700 text-white px-4 py-2 focus:outline-none focus:border-green-500"
+        placeholder="A mysterious realm shrouded in ancient magic..."
+      ></textarea>
+    </div>
+
+    <div class="flex gap-4">
+      <button type="submit" class="bg-green-700 hover:bg-green-600 text-white px-8 py-3 border-2 border-green-500">
+        [CREATE WORLD]
+      </button>
+      <a href="/worlds/builder" class="bg-gray-700 hover:bg-gray-600 text-white px-8 py-3 border-2 border-gray-500 inline-block">
+        [CANCEL]
+      </a>
+    </div>
+  </form>
+</div>

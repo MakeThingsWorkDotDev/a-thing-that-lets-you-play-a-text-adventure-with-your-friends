@@ -10,4 +10,4 @@ gem "sequel", "~> 5.84"
 gem "sqlite3", "~> 1.7"
 gem "bcrypt", "~> 3.1"
 
-gem "ruby-openai", "~> 8.3"
+gem "openai", "~> 0.40"

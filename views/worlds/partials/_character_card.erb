@@ -1,0 +1,45 @@
+<%
+# Partial for rendering a single character card
+# Params:
+#   character - Character object to render
+#   locations - Array of all locations (for location lookup)
+%>
+<div class="border-2 border-red-600 p-3 bg-gray-900 hover:bg-gray-800" data-character-id="<%= character.id %>">
+  <div class="flex justify-between items-start">
+    <div class="flex-1">
+      <h4 class="font-bold text-red-300">
+        <%= character.name %>
+        <% if character.is_hostile %>
+          <span class="text-red-500">[HOSTILE]</span>
+        <% end %>
+      </h4>
+      <% if character.description %>
+        <% truncated = character.description.length > 100 %>
+        <% display_text = truncated ? character.description[0..99] + "..." : character.description %>
+        <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(character.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+      <% end %>
+      <div class="text-xs text-gray-500 mt-1">
+        HP: <%= character.max_hp %> | STR: <%= character.strength %> | INT: <%= character.intelligence %> | CHA: <%= character.charisma %> | Gold: <%= character.gold || 0 %>
+        <% if character.location_id %>
+          | @ <%= locations.find { |l| l.id == character.location_id }&.name || "Location ##{character.location_id}" %>
+        <% end %>
+      </div>
+    </div>
+    <div class="flex gap-2 ml-2">
+      <button class="focus-btn text-purple-400 hover:text-purple-300"
+              data-type="character"
+              data-id="<%= character.id %>"
+              data-name="<%= ERB::Util.html_escape(character.name) %>"
+              data-location="<%= locations.find { |l| l.id == character.location_id }&.name || '' %>"
+              data-hostile="<%= character.is_hostile %>">
+        [FOCUS]
+      </button>
+      <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="character" data-id="<%= character.id %>">
+        [EDIT]
+      </button>
+      <button class="delete-btn text-red-400 hover:text-red-300" data-type="character" data-id="<%= character.id %>">
+        [X]
+      </button>
+    </div>
+  </div>
+</div>

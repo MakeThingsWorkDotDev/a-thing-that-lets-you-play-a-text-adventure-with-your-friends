@@ -24,6 +24,26 @@
         <% end %>
       </select>
     </div>
+    <div class="my-2">
+      <label for="world_template_id" class="block mb-1">World Template (optional):</label>
+      <select id="world_template_id" name="world_template_id" class="p-1 w-80 border border-terminal-green-500">
+        <option value="">None - Start with empty world</option>
+        <% @world_templates.each do |world| %>
+          <option value="<%= world.id %>">
+            <%= world.name %> (<%= world.locations.count %> locations)
+          </option>
+        <% end %>
+      </select>
+      <% if @world_templates.any? %>
+        <p class="text-sm text-gray-400 mt-1">
+          <a href="/worlds/builder" class="text-green-400 hover:text-green-300">Manage templates</a>
+        </p>
+      <% else %>
+        <p class="text-sm text-gray-400 mt-1">
+          <a href="/worlds/builder/new" class="text-green-400 hover:text-green-300">Create your first world template</a>
+        </p>
+      <% end %>
+    </div>
     <div class="my-5">
       <%= submit_button('Create Room') %>
       <a href="/" class="ml-2 py-2 px-5 bg-red-600 text-white no-underline hover:bg-red-700 inline-block">Cancel</a>

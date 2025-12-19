@@ -1,0 +1,41 @@
+<%
+# Partial for rendering a single connection card
+# Params:
+#   connection - Connection object to render
+#   locations - Array of all locations (for name lookup)
+%>
+<div class="border-2 border-blue-600 p-3 bg-gray-900 hover:bg-gray-800" data-connection-id="<%= connection.id %>">
+  <div class="flex justify-between items-start">
+    <div class="flex-1">
+      <span class="text-blue-300">
+        <%= locations.find { |l| l.id == connection.from_location_id }&.name || "Location ##{connection.from_location_id}" %>
+        <span class="text-gray-500">→ [<%= connection.direction %>] →</span>
+        <%= locations.find { |l| l.id == connection.to_location_id }&.name || "Location ##{connection.to_location_id}" %>
+        <% if connection.is_bidirectional %>
+          <span class="text-gray-500">(bidirectional)</span>
+        <% end %>
+      </span>
+      <% if connection.description %>
+        <% truncated = connection.description.length > 100 %>
+        <% display_text = truncated ? connection.description[0..99] + "..." : connection.description %>
+        <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(connection.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+      <% end %>
+    </div>
+    <div class="flex gap-2 ml-2">
+      <button class="focus-btn text-purple-400 hover:text-purple-300"
+              data-type="connection"
+              data-id="<%= connection.id %>"
+              data-from-location="<%= locations.find { |l| l.id == connection.from_location_id }&.name || '' %>"
+              data-to-location="<%= locations.find { |l| l.id == connection.to_location_id }&.name || '' %>"
+              data-direction="<%= connection.direction %>">
+        [FOCUS]
+      </button>
+      <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="connection" data-id="<%= connection.id %>">
+        [EDIT]
+      </button>
+      <button class="delete-btn text-red-400 hover:text-red-300" data-type="connection" data-id="<%= connection.id %>">
+        [X]
+      </button>
+    </div>
+  </div>
+</div>

@@ -4,27 +4,18 @@ GEM
     base64 (0.3.0)
     bcrypt (3.1.20)
     bigdecimal (3.2.3)
-    event_stream_parser (1.0.0)
+    connection_pool (3.0.2)
     eventmachine (1.2.7)
-    faraday (2.14.0)
-      faraday-net_http (>= 2.0, < 3.5)
-      json
-      logger
-    faraday-multipart (1.1.1)
-      multipart-post (~> 2.0)
-    faraday-net_http (3.4.1)
-      net-http (>= 0.5.0)
     faye-websocket (0.12.0)
       eventmachine (>= 0.12.0)
       websocket-driver (>= 0.8.0)
-    json (2.15.1)
     logger (1.7.0)
-    multipart-post (2.4.1)
     mustermann (3.0.4)
       ruby2_keywords (~> 0.0.1)
-    net-http (0.6.0)
-      uri
     nio4r (2.7.4)
+    openai (0.40.0)
+      base64
+      connection_pool
     puma (7.0.4)
       nio4r (~> 2.0)
     rack (3.2.1)
@@ -37,10 +28,6 @@ GEM
       rack (>= 3.0.0)
     rackup (2.2.1)
       rack (>= 3)
-    ruby-openai (8.3.0)
-      event_stream_parser (>= 0.3.0, < 2.0.0)
-      faraday (>= 1)
-      faraday-multipart (>= 1)
     ruby2_keywords (0.0.5)
     sequel (5.96.0)
       bigdecimal
@@ -53,7 +40,6 @@ GEM
       tilt (~> 2.0)
     sqlite3 (1.7.3-arm64-darwin)
     tilt (2.6.1)
-    uri (1.0.4)
     websocket-driver (0.8.0)
       base64
       websocket-extensions (>= 0.1.0)
@@ -65,9 +51,9 @@ PLATFORMS
 DEPENDENCIES
   bcrypt (~> 3.1)
   faye-websocket (~> 0.12.0)
+  openai (~> 0.40)
   puma (~> 7.0)
   rackup (~> 2.2)
-  ruby-openai (~> 8.3)
   sequel (~> 5.84)
   sinatra (~> 4.1)
   sqlite3 (~> 1.7)

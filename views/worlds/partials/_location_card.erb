@@ -1,0 +1,50 @@
+<%
+# Partial for rendering a single location card
+# Params:
+#   location - Location object to render
+#   locations - Array of all locations (for checking children)
+#   level - Indentation level for hierarchy
+%>
+<% children = locations.select { |l| l.parent_location_id == location.id } %>
+<% has_children = children.any? %>
+
+<div class="location-item <%= level > 0 ? 'child-location' : '' %>" data-location-id="<%= location.id %>" data-parent-id="<%= location.parent_location_id || '' %>" data-level="<%= level %>" style="margin-left: <%= level * 20 %>px;">
+  <div class="border-2 border-green-600 p-3 bg-gray-900 hover:bg-gray-800">
+    <div class="flex justify-between items-start">
+      <div class="flex-1">
+        <div class="flex items-center gap-2">
+          <% if has_children %>
+            <button class="expand-collapse-btn text-green-400 hover:text-green-300" data-location-id="<%= location.id %>">[−]</button>
+          <% end %>
+          <h4 class="font-bold text-green-300"><%= location.name %></h4>
+        </div>
+        <% if location.description %>
+          <% truncated = location.description.length > 100 %>
+          <% display_text = truncated ? location.description[0..99] + "..." : location.description %>
+          <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(location.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+        <% end %>
+        <div class="mt-1 space-x-2">
+          <% if location.location_type %>
+            <span class="text-xs text-gray-500 inline-block">[<%= location.location_type %>]</span>
+          <% end %>
+        </div>
+      </div>
+      <div class="flex gap-2 ml-2">
+        <button class="focus-btn text-purple-400 hover:text-purple-300"
+                data-type="location"
+                data-id="<%= location.id %>"
+                data-name="<%= ERB::Util.html_escape(location.name) %>"
+                data-location-type="<%= location.location_type %>"
+                data-parent-id="<%= location.parent_location_id || '' %>">
+          [FOCUS]
+        </button>
+        <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="location" data-id="<%= location.id %>">
+          [EDIT]
+        </button>
+        <button class="delete-btn text-red-400 hover:text-red-300" data-type="location" data-id="<%= location.id %>">
+          [X]
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

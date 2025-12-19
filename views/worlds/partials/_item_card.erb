@@ -1,0 +1,40 @@
+<%
+# Partial for rendering a single item card
+# Params:
+#   item - Item object to render
+#   locations - Array of all locations (for location lookup)
+%>
+<div class="border-2 border-yellow-600 p-3 bg-gray-900 hover:bg-gray-800" data-item-id="<%= item.id %>">
+  <div class="flex justify-between items-start">
+    <div class="flex-1">
+      <h4 class="font-bold text-yellow-300"><%= item.name %></h4>
+      <% if item.description %>
+        <% truncated = item.description.length > 100 %>
+        <% display_text = truncated ? item.description[0..99] + "..." : item.description %>
+        <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(item.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+      <% end %>
+      <div class="text-xs text-gray-500 mt-1">
+        Type: <%= item.item_type %> | Cost: <%= item.cost || 0 %> gold
+        <% if item.location_id %>
+          | @ <%= locations.find { |l| l.id == item.location_id }&.name || "Location ##{item.location_id}" %>
+        <% end %>
+      </div>
+    </div>
+    <div class="flex gap-2 ml-2">
+      <button class="focus-btn text-purple-400 hover:text-purple-300"
+              data-type="item"
+              data-id="<%= item.id %>"
+              data-name="<%= ERB::Util.html_escape(item.name) %>"
+              data-item-type="<%= item.item_type %>"
+              data-location="<%= locations.find { |l| l.id == item.location_id }&.name || '' %>">
+        [FOCUS]
+      </button>
+      <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="item" data-id="<%= item.id %>">
+        [EDIT]
+      </button>
+      <button class="delete-btn text-red-400 hover:text-red-300" data-type="item" data-id="<%= item.id %>">
+        [X]
+      </button>
+    </div>
+  </div>
+</div>

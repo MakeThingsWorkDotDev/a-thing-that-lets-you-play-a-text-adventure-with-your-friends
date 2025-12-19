@@ -1,0 +1,43 @@
+<%
+# Partial for rendering a single quest card
+# Params:
+#   quest - Quest object to render
+%>
+<div class="border-2 border-orange-600 p-3 bg-gray-900 hover:bg-gray-800" data-quest-id="<%= quest.id %>">
+  <div class="flex justify-between items-start">
+    <div class="flex-1">
+      <h4 class="font-bold text-orange-300">
+        <%= quest.name %>
+        <span class="text-xs text-gray-500">[<%= quest.status %>]</span>
+      </h4>
+      <% if quest.description %>
+        <% truncated = quest.description.length > 100 %>
+        <% display_text = truncated ? quest.description[0..99] + "..." : quest.description %>
+        <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(quest.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+      <% end %>
+      <div class="text-xs text-gray-500 mt-1">
+        Type: <%= quest.quest_type || 'main' %>
+        <% objectives = quest.quest_objectives %>
+        <% if objectives.any? %>
+          | Objectives: <%= objectives.count %>
+        <% end %>
+      </div>
+    </div>
+    <div class="flex gap-2 ml-2">
+      <button class="focus-btn text-purple-400 hover:text-purple-300"
+              data-type="quest"
+              data-id="<%= quest.id %>"
+              data-name="<%= ERB::Util.html_escape(quest.name) %>"
+              data-status="<%= quest.status %>"
+              data-quest-type="<%= quest.quest_type || 'main' %>">
+        [FOCUS]
+      </button>
+      <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="quest" data-id="<%= quest.id %>">
+        [EDIT]
+      </button>
+      <button class="delete-btn text-red-400 hover:text-red-300" data-type="quest" data-id="<%= quest.id %>">
+        [X]
+      </button>
+    </div>
+  </div>
+</div>

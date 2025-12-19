@@ -1,0 +1,44 @@
+<%
+# Partial for rendering a single container card
+# Params:
+#   container - Container object to render
+#   locations - Array of all locations (for location lookup)
+%>
+<div class="border-2 border-purple-600 p-3 bg-gray-900 hover:bg-gray-800" data-container-id="<%= container.id %>">
+  <div class="flex justify-between items-start">
+    <div class="flex-1">
+      <h4 class="font-bold text-purple-300">
+        <%= container.name %>
+        <% if container.is_locked %>
+          <span class="text-red-500">[LOCKED]</span>
+        <% end %>
+      </h4>
+      <% if container.description %>
+        <% truncated = container.description.length > 100 %>
+        <% display_text = truncated ? container.description[0..99] + "..." : container.description %>
+        <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(container.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+      <% end %>
+      <div class="text-xs text-gray-500 mt-1">
+        <% if container.location_id %>
+          @ <%= locations.find { |l| l.id == container.location_id }&.name || "Location ##{container.location_id}" %>
+        <% end %>
+      </div>
+    </div>
+    <div class="flex gap-2 ml-2">
+      <button class="focus-btn text-purple-400 hover:text-purple-300"
+              data-type="container"
+              data-id="<%= container.id %>"
+              data-name="<%= ERB::Util.html_escape(container.name) %>"
+              data-locked="<%= container.is_locked %>"
+              data-location="<%= locations.find { |l| l.id == container.location_id }&.name || '' %>">
+        [FOCUS]
+      </button>
+      <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="container" data-id="<%= container.id %>">
+        [EDIT]
+      </button>
+      <button class="delete-btn text-red-400 hover:text-red-300" data-type="container" data-id="<%= container.id %>">
+        [X]
+      </button>
+    </div>
+  </div>
+</div>

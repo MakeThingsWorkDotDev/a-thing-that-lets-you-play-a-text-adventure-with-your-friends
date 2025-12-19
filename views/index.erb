@@ -13,8 +13,11 @@
     </div>
   </div>
 
-  <div class="mb-5">
+  <div class="mb-5 flex gap-3">
     <%= link_button('/rooms/new', 'Create New Room +') %>
+    <a href="/worlds/builder" class="py-2 px-5 bg-blue-600 text-white no-underline hover:bg-blue-700">
+      World Builder
+    </a>
   </div>
 
   <% if @rooms && @rooms.length > 0 %>

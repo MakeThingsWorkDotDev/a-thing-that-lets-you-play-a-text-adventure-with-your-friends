@@ -1,0 +1,2294 @@
+<div class="container-fluid mx-auto px-4 py-8">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-bold text-green-400">═══ WORLD BUILDER: <%= @world.name %> ═══</h1>
+      <p class="text-gray-400"><%= @world.description %></p>
+    </div>
+    <div class="flex gap-2">
+      <button id="view-toggle-btn" class="bg-cyan-700 hover:bg-cyan-600 text-white px-4 py-2 border-2 border-cyan-500">
+        [🗺 MAP VIEW]
+      </button>
+      <button id="undo-btn" <%= @undo_available ? '' : 'disabled' %> class="bg-yellow-700 hover:bg-yellow-600 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-2 border-2 border-yellow-500 disabled:border-gray-600">
+        [↶ UNDO]
+      </button>
+      <button id="redo-btn" <%= @redo_available ? '' : 'disabled' %> class="bg-yellow-700 hover:bg-yellow-600 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-2 border-2 border-yellow-500 disabled:border-gray-600">
+        [↷ REDO]
+      </button>
+      <a href="/worlds/builder" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 border-2 border-gray-500 inline-block">
+        [DONE]
+      </a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-12 gap-4">
+    <!-- Left Sidebar: Toolbox -->
+    <div class="col-span-3 space-y-4">
+      <div class="border-2 border-green-700 bg-gray-900 p-4">
+        <h2 class="text-lg font-bold text-green-400 mb-4">╔═══ TOOLBOX ═══╗</h2>
+
+        <!-- Tool Buttons -->
+        <div class="space-y-2">
+          <button class="tool-btn w-full text-left bg-gray-800 hover:bg-gray-700 border-2 border-green-600 text-white px-3 py-2" data-tool="location">
+            [+] LOCATION
+          </button>
+          <button class="tool-btn w-full text-left bg-gray-800 hover:bg-gray-700 border-2 border-blue-600 text-white px-3 py-2" data-tool="connection">
+            [→] CONNECTION
+          </button>
+          <button class="tool-btn w-full text-left bg-gray-800 hover:bg-gray-700 border-2 border-red-600 text-white px-3 py-2" data-tool="character">
+            [☠] CHARACTER
+          </button>
+          <button class="tool-btn w-full text-left bg-gray-800 hover:bg-gray-700 border-2 border-yellow-600 text-white px-3 py-2" data-tool="item">
+            [◆] ITEM
+          </button>
+          <button class="tool-btn w-full text-left bg-gray-800 hover:bg-gray-700 border-2 border-purple-600 text-white px-3 py-2" data-tool="container">
+            [▣] CONTAINER
+          </button>
+          <button class="tool-btn w-full text-left bg-gray-800 hover:bg-gray-700 border-2 border-orange-600 text-white px-3 py-2" data-tool="quest">
+            [!] QUEST
+          </button>
+        </div>
+
+        <!-- Legend -->
+        <div class="mt-6 pt-4 border-t-2 border-gray-700">
+          <h3 class="text-sm font-bold text-gray-400 mb-2">STATS:</h3>
+          <div class="text-sm text-gray-300 space-y-1">
+            <div>Locations: <span class="text-green-400"><%= @locations.count %></span></div>
+            <div>Connections: <span class="text-blue-400"><%= @connections.count %></span></div>
+            <div>Characters: <span class="text-red-400"><%= @characters.count %></span></div>
+            <div>Items: <span class="text-yellow-400"><%= @items.count %></span></div>
+            <div>Containers: <span class="text-purple-400"><%= @containers.count %></span></div>
+            <div>Quests: <span class="text-orange-400"><%= @quests.count %></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="col-span-6">
+      <!-- List View (default) -->
+      <div id="list-view">
+      <!-- Locations -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-green-400 mb-3 cursor-pointer hover:text-green-300 section-header" data-section="locations">
+          <span class="collapse-indicator">[+]</span> ═══ LOCATIONS ═══
+        </h2>
+        <div id="locations-list" class="space-y-2 section-content" style="display: none;">
+          <% if @locations.empty? %>
+            <p class="text-gray-500">No locations yet. Use the toolbox to create your first location.</p>
+          <% else %>
+            <%
+              # Build flattened tree structure: calculate level for each location
+              location_levels = {}
+
+              # Calculate level for each location
+              @locations.each do |loc|
+                level = 0
+                current = loc
+                visited = Set.new
+
+                while current.parent_location_id && !visited.include?(current.id)
+                  visited.add(current.id)
+                  parent = @locations.find { |l| l.id == current.parent_location_id }
+                  break unless parent
+                  level += 1
+                  current = parent
+                end
+
+                location_levels[loc.id] = level
+              end
+
+              # Sort locations: parents before children, same level alphabetically
+              sorted_locations = @locations.sort_by do |loc|
+                path = []
+                current = loc
+                visited = Set.new
+
+                while current && !visited.include?(current.id)
+                  visited.add(current.id)
+                  path.unshift(current.name)
+                  if current.parent_location_id
+                    current = @locations.find { |l| l.id == current.parent_location_id }
+                  else
+                    current = nil
+                  end
+                end
+
+                path
+              end
+            %>
+
+            <% sorted_locations.each do |location| %>
+              <% level = location_levels[location.id] %>
+              <% children = @locations.select { |l| l.parent_location_id == location.id } %>
+              <% has_children = children.any? %>
+
+              <div class="location-item <%= level > 0 ? 'child-location' : '' %>" data-location-id="<%= location.id %>" data-parent-id="<%= location.parent_location_id || '' %>" data-level="<%= level %>" style="margin-left: <%= level * 20 %>px;">
+                <div class="border-2 border-green-600 p-3 bg-gray-900 hover:bg-gray-800">
+                  <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2">
+                        <% if has_children %>
+                          <button class="expand-collapse-btn text-green-400 hover:text-green-300" data-location-id="<%= location.id %>">[−]</button>
+                        <% end %>
+                        <h4 class="font-bold text-green-300"><%= location.name %></h4>
+                      </div>
+                      <% if location.description %>
+                        <% truncated = location.description.length > 100 %>
+                        <% display_text = truncated ? location.description[0..99] + "..." : location.description %>
+                        <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(location.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+                      <% end %>
+                      <div class="mt-1 space-x-2">
+                        <% if location.location_type %>
+                          <span class="text-xs text-gray-500 inline-block">[<%= location.location_type %>]</span>
+                        <% end %>
+                      </div>
+                    </div>
+                    <div class="flex gap-2 ml-2">
+                      <button class="focus-btn text-purple-400 hover:text-purple-300"
+                              data-type="location"
+                              data-id="<%= location.id %>"
+                              data-name="<%= ERB::Util.html_escape(location.name) %>"
+                              data-location-type="<%= location.location_type %>"
+                              data-parent-id="<%= location.parent_location_id || '' %>">
+                        [FOCUS]
+                      </button>
+                      <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="location" data-id="<%= location.id %>">
+                        [EDIT]
+                      </button>
+                      <button class="delete-btn text-red-400 hover:text-red-300" data-type="location" data-id="<%= location.id %>">
+                        [X]
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Connections -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-blue-400 mb-3 cursor-pointer hover:text-blue-300 section-header" data-section="connections">
+          <span class="collapse-indicator">[+]</span> ═══ CONNECTIONS ═══
+        </h2>
+        <div id="connections-list" class="space-y-2 section-content" style="display: none;">
+          <% if @connections.empty? %>
+            <p class="text-gray-500">No connections yet. Connect your locations using the toolbox.</p>
+          <% else %>
+            <% @connections.each do |conn| %>
+              <div class="border-2 border-blue-600 p-3 bg-gray-900 hover:bg-gray-800" data-connection-id="<%= conn.id %>">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <span class="text-blue-300">
+                      <%= @locations.find { |l| l.id == conn.from_location_id }&.name || "Location ##{conn.from_location_id}" %>
+                      <span class="text-gray-500">→ [<%= conn.direction %>] →</span>
+                      <%= @locations.find { |l| l.id == conn.to_location_id }&.name || "Location ##{conn.to_location_id}" %>
+                      <% if conn.is_bidirectional %>
+                        <span class="text-gray-500">(bidirectional)</span>
+                      <% end %>
+                    </span>
+                    <% if conn.description %>
+                      <% truncated = conn.description.length > 100 %>
+                      <% display_text = truncated ? conn.description[0..99] + "..." : conn.description %>
+                      <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(conn.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+                    <% end %>
+                  </div>
+                  <div class="flex gap-2 ml-2">
+                    <button class="focus-btn text-purple-400 hover:text-purple-300"
+                            data-type="connection"
+                            data-id="<%= conn.id %>"
+                            data-from-location="<%= @locations.find { |l| l.id == conn.from_location_id }&.name || '' %>"
+                            data-to-location="<%= @locations.find { |l| l.id == conn.to_location_id }&.name || '' %>"
+                            data-direction="<%= conn.direction %>">
+                      [FOCUS]
+                    </button>
+                    <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="connection" data-id="<%= conn.id %>">
+                      [EDIT]
+                    </button>
+                    <button class="delete-btn text-red-400 hover:text-red-300" data-type="connection" data-id="<%= conn.id %>">
+                      [X]
+                    </button>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Characters -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-red-400 mb-3 cursor-pointer hover:text-red-300 section-header" data-section="characters">
+          <span class="collapse-indicator">[+]</span> ═══ CHARACTERS ═══
+        </h2>
+        <div id="characters-list" class="space-y-2 section-content" style="display: none;">
+          <% if @characters.empty? %>
+            <p class="text-gray-500">No characters yet. Create NPCs using the toolbox.</p>
+          <% else %>
+            <% @characters.each do |char| %>
+              <div class="border-2 border-red-600 p-3 bg-gray-900 hover:bg-gray-800" data-character-id="<%= char.id %>">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <h4 class="font-bold text-red-300">
+                      <%= char.name %>
+                      <% if char.is_hostile %>
+                        <span class="text-red-500">[HOSTILE]</span>
+                      <% end %>
+                    </h4>
+                    <% if char.description %>
+                      <% truncated = char.description.length > 100 %>
+                      <% display_text = truncated ? char.description[0..99] + "..." : char.description %>
+                      <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(char.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+                    <% end %>
+                    <div class="text-xs text-gray-500 mt-1">
+                      HP: <%= char.max_hp %> | STR: <%= char.strength %> | INT: <%= char.intelligence %> | CHA: <%= char.charisma %> | Gold: <%= char.gold || 0 %>
+                      <% if char.location_id %>
+                        | @ <%= @locations.find { |l| l.id == char.location_id }&.name || "Location ##{char.location_id}" %>
+                      <% end %>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 ml-2">
+                    <button class="focus-btn text-purple-400 hover:text-purple-300"
+                            data-type="character"
+                            data-id="<%= char.id %>"
+                            data-name="<%= ERB::Util.html_escape(char.name) %>"
+                            data-location="<%= @locations.find { |l| l.id == char.location_id }&.name || '' %>"
+                            data-hostile="<%= char.is_hostile %>">
+                      [FOCUS]
+                    </button>
+                    <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="character" data-id="<%= char.id %>">
+                      [EDIT]
+                    </button>
+                    <button class="delete-btn text-red-400 hover:text-red-300" data-type="character" data-id="<%= char.id %>">
+                      [X]
+                    </button>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Items -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-yellow-400 mb-3 cursor-pointer hover:text-yellow-300 section-header" data-section="items">
+          <span class="collapse-indicator">[+]</span> ═══ ITEMS ═══
+        </h2>
+        <div id="items-list" class="space-y-2 section-content" style="display: none;">
+          <% if @items.empty? %>
+            <p class="text-gray-500">No items yet. Add items using the toolbox.</p>
+          <% else %>
+            <% @items.each do |item| %>
+              <div class="border-2 border-yellow-600 p-3 bg-gray-900 hover:bg-gray-800" data-item-id="<%= item.id %>">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <h4 class="font-bold text-yellow-300"><%= item.name %></h4>
+                    <% if item.description %>
+                      <% truncated = item.description.length > 100 %>
+                      <% display_text = truncated ? item.description[0..99] + "..." : item.description %>
+                      <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(item.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+                    <% end %>
+                    <div class="text-xs text-gray-500 mt-1">
+                      Type: <%= item.item_type %> | Cost: <%= item.cost || 0 %> gold
+                      <% if item.location_id %>
+                        | @ <%= @locations.find { |l| l.id == item.location_id }&.name || "Location ##{item.location_id}" %>
+                      <% end %>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 ml-2">
+                    <button class="focus-btn text-purple-400 hover:text-purple-300"
+                            data-type="item"
+                            data-id="<%= item.id %>"
+                            data-name="<%= ERB::Util.html_escape(item.name) %>"
+                            data-item-type="<%= item.item_type %>"
+                            data-location="<%= @locations.find { |l| l.id == item.location_id }&.name || '' %>">
+                      [FOCUS]
+                    </button>
+                    <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="item" data-id="<%= item.id %>">
+                      [EDIT]
+                    </button>
+                    <button class="delete-btn text-red-400 hover:text-red-300" data-type="item" data-id="<%= item.id %>">
+                      [X]
+                    </button>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Containers -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-purple-400 mb-3 cursor-pointer hover:text-purple-300 section-header" data-section="containers">
+          <span class="collapse-indicator">[+]</span> ═══ CONTAINERS ═══
+        </h2>
+        <div id="containers-list" class="space-y-2 section-content" style="display: none;">
+          <% if @containers.empty? %>
+            <p class="text-gray-500">No containers yet. Add containers using the toolbox.</p>
+          <% else %>
+            <% @containers.each do |container| %>
+              <div class="border-2 border-purple-600 p-3 bg-gray-900 hover:bg-gray-800" data-container-id="<%= container.id %>">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <h4 class="font-bold text-purple-300">
+                      <%= container.name %>
+                      <% if container.is_locked %>
+                        <span class="text-red-500">[LOCKED]</span>
+                      <% end %>
+                    </h4>
+                    <% if container.description %>
+                      <% truncated = container.description.length > 100 %>
+                      <% display_text = truncated ? container.description[0..99] + "..." : container.description %>
+                      <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(container.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+                    <% end %>
+                    <div class="text-xs text-gray-500 mt-1">
+                      <% if container.location_id %>
+                        @ <%= @locations.find { |l| l.id == container.location_id }&.name || "Location ##{container.location_id}" %>
+                      <% end %>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 ml-2">
+                    <button class="focus-btn text-purple-400 hover:text-purple-300"
+                            data-type="container"
+                            data-id="<%= container.id %>"
+                            data-name="<%= ERB::Util.html_escape(container.name) %>"
+                            data-locked="<%= container.is_locked %>"
+                            data-location="<%= @locations.find { |l| l.id == container.location_id }&.name || '' %>">
+                      [FOCUS]
+                    </button>
+                    <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="container" data-id="<%= container.id %>">
+                      [EDIT]
+                    </button>
+                    <button class="delete-btn text-red-400 hover:text-red-300" data-type="container" data-id="<%= container.id %>">
+                      [X]
+                    </button>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Quests -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-orange-400 mb-3 cursor-pointer hover:text-orange-300 section-header" data-section="quests">
+          <span class="collapse-indicator">[+]</span> ═══ QUESTS ═══
+        </h2>
+        <div id="quests-list" class="space-y-2 section-content" style="display: none;">
+          <% if @quests.empty? %>
+            <p class="text-gray-500">No quests yet. Add quests using the toolbox.</p>
+          <% else %>
+            <% @quests.each do |quest| %>
+              <div class="border-2 border-orange-600 p-3 bg-gray-900 hover:bg-gray-800" data-quest-id="<%= quest.id %>">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <h4 class="font-bold text-orange-300">
+                      <%= quest.name %>
+                      <span class="text-xs text-gray-500">[<%= quest.status %>]</span>
+                    </h4>
+                    <% if quest.description %>
+                      <% truncated = quest.description.length > 100 %>
+                      <% display_text = truncated ? quest.description[0..99] + "..." : quest.description %>
+                      <p class="text-sm text-gray-400 mt-1 description-text cursor-pointer hover:text-gray-300" data-full-text="<%= ERB::Util.html_escape(quest.description) %>" data-truncated="<%= truncated %>"><%= display_text %></p>
+                    <% end %>
+                    <div class="text-xs text-gray-500 mt-1">
+                      Type: <%= quest.quest_type || 'main' %>
+                      <% objectives = quest.quest_objectives %>
+                      <% if objectives.any? %>
+                        | Objectives: <%= objectives.count %>
+                      <% end %>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 ml-2">
+                    <button class="focus-btn text-purple-400 hover:text-purple-300"
+                            data-type="quest"
+                            data-id="<%= quest.id %>"
+                            data-name="<%= ERB::Util.html_escape(quest.name) %>"
+                            data-status="<%= quest.status %>"
+                            data-quest-type="<%= quest.quest_type || 'main' %>">
+                      [FOCUS]
+                    </button>
+                    <button class="edit-btn text-yellow-400 hover:text-yellow-300" data-type="quest" data-id="<%= quest.id %>">
+                      [EDIT]
+                    </button>
+                    <button class="delete-btn text-red-400 hover:text-red-300" data-type="quest" data-id="<%= quest.id %>">
+                      [X]
+                    </button>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+      </div>
+      <!-- End List View -->
+
+      <!-- Map View (hidden by default) -->
+      <div id="map-view" style="display: none;">
+        <div class="border-2 border-cyan-700 bg-gray-900 p-4">
+          <div class="flex justify-between items-center mb-3">
+            <h2 class="text-lg font-bold text-cyan-400">╔═══ VISUAL MAP ═══╗</h2>
+            <div id="map-breadcrumb" class="text-sm cursor-pointer hover:text-cyan-300">
+              <span class="text-gray-500">Location: </span>
+              <span id="current-map-location" class="text-cyan-400">[World View]</span>
+            </div>
+          </div>
+
+          <!-- Map Container -->
+          <div id="map-container" class="relative bg-black border-2 border-cyan-600" style="height: 600px; max-height: 600px; width: 100%; overflow: auto;">
+            <!-- Map will be rendered here via JavaScript -->
+          </div>
+
+          <!-- Map Legend -->
+          <div class="mt-3 text-xs text-gray-500 flex gap-4">
+            <div><span class="inline-block w-3 h-3 bg-green-700 border border-green-500"></span> Location</div>
+            <div><span class="inline-block w-3 h-3 bg-red-700 border border-red-500"></span> Character</div>
+            <div><span class="inline-block w-3 h-3 bg-yellow-700 border border-yellow-500"></span> Item</div>
+            <div><span class="inline-block w-3 h-3 bg-purple-700 border border-purple-500"></span> Container</div>
+            <div class="text-blue-500">━━ Connection</div>
+          </div>
+        </div>
+      </div>
+      <!-- End Map View -->
+    </div>
+
+    <!-- AI Assistant Sidebar -->
+    <div class="col-span-3 sticky top-0" id="ai-sidebar" style="max-height: 100vh;">
+      <div class="border-2 border-purple-700 bg-gray-900 flex flex-col" style="height: 100vh;">
+        <!-- Header -->
+        <div class="p-4 border-b-2 border-purple-700 flex-shrink-0">
+          <h2 class="text-lg font-bold text-purple-400">╔═ AI ASSISTANT ═╗</h2>
+          <p class="text-xs text-gray-500 mt-1">Ask me to create locations, NPCs, items...</p>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="ai-messages" class="flex-1 overflow-y-auto p-4 space-y-3">
+          <!-- Messages will be added here by JavaScript -->
+        </div>
+
+        <!-- Status Indicator -->
+        <div id="ai-status" class="px-4 py-2 border-t border-gray-700 text-purple-400 text-sm hidden flex-shrink-0">
+          <span class="animate-pulse">● Thinking...</span>
+        </div>
+
+        <!-- Context Display -->
+        <div id="ai-context" class="px-4 py-2 border-t border-gray-700 hidden flex-shrink-0">
+          <div class="text-xs text-purple-400 font-bold mb-1">FOCUSED ENTITY:</div>
+          <div id="ai-context-content" class="text-xs text-gray-300"></div>
+          <button id="clear-focus" class="text-xs text-red-400 hover:text-red-300 mt-1">[Clear Focus]</button>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 border-t-2 border-purple-700 flex-shrink-0">
+          <form id="ai-input-form" class="space-y-2">
+            <!-- Auto-approve Checkbox -->
+            <label class="flex items-center text-sm text-purple-400 cursor-pointer hover:text-purple-300 mb-2">
+              <input type="checkbox" id="auto-approve-checkbox" class="mr-2">
+              <span>⚡ Auto-approve all changes</span>
+            </label>
+            <textarea
+              id="ai-input"
+              rows="3"
+              placeholder="e.g., Create a haunted mansion with 5 rooms..."
+              class="w-full bg-gray-800 border-2 border-purple-600 text-white px-3 py-2 resize-none focus:outline-none focus:border-purple-400"
+            ></textarea>
+            <div class="flex gap-2">
+              <button type="submit" class="flex-1 bg-purple-700 hover:bg-purple-600 text-white px-4 py-2 border-2 border-purple-500 font-bold">
+                [SEND]
+              </button>
+              <button type="button" id="clear-conversation" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 border-2 border-gray-500">
+                [CLEAR]
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Container -->
+<div id="modal-overlay" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+  <div id="modal-content" class="bg-gray-900 border-4 border-green-700 p-6 max-w-2xl w-full max-h-screen overflow-y-auto">
+    <!-- Modal content will be inserted here -->
+  </div>
+</div>
+
+<script>
+const worldId = <%= @world.id %>;
+
+// Global entity data (mutable for WebSocket updates)
+let allLocations = <%= @locations.map { |l| { id: l.id, name: l.name, location_type: l.location_type, parent_location_id: l.parent_location_id } }.to_json %>;
+let allCharacters = <%= @characters.map { |c| { id: c.id, name: c.name, location_id: c.location_id } }.to_json %>;
+let allItems = <%= @items.map { |i| { id: i.id, name: i.name, location_id: i.location_id } }.to_json %>;
+let allContainers = <%= @containers.map { |c| { id: c.id, name: c.name, location_id: c.location_id } }.to_json %>;
+let allConnections = <%= @connections.map { |c| { id: c.id, from_location_id: c.from_location_id, to_location_id: c.to_location_id, is_bidirectional: c.is_bidirectional } }.to_json %>;
+
+// Legacy aliases for backward compatibility
+const locations = allLocations;
+const items = allItems;
+
+// Auto-approve checkbox: load saved state from localStorage
+const autoApproveCheckbox = document.getElementById('auto-approve-checkbox');
+if (autoApproveCheckbox) {
+  const savedAutoApprove = localStorage.getItem('worldbuilder_auto_approve');
+  if (savedAutoApprove === 'true') {
+    autoApproveCheckbox.checked = true;
+  }
+
+  // Save state when checkbox changes
+  autoApproveCheckbox.addEventListener('change', () => {
+    localStorage.setItem('worldbuilder_auto_approve', autoApproveCheckbox.checked);
+  });
+}
+
+// Tool button handlers
+document.querySelectorAll('.tool-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tool = btn.dataset.tool;
+    showModal(tool);
+  });
+});
+
+// Delete button handlers
+document.querySelectorAll('.delete-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.type;
+    const id = btn.dataset.id;
+    if (confirm(`Delete this ${type}?`)) {
+      deleteEntity(type, id);
+    }
+  });
+});
+
+// Edit button handlers
+document.querySelectorAll('.edit-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.type;
+    const id = btn.dataset.id;
+    showEditModal(type, id);
+  });
+});
+
+// Focus button handlers
+let focusedEntity = null;
+
+document.querySelectorAll('.focus-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.type;
+    const id = btn.dataset.id;
+
+    // Collect all data attributes
+    const entityData = {
+      type: type,
+      id: id
+    };
+
+    // Copy all data attributes to entityData
+    Object.keys(btn.dataset).forEach(key => {
+      if (key !== 'type' && key !== 'id') {
+        entityData[key] = btn.dataset[key];
+      }
+    });
+
+    focusedEntity = entityData;
+    updateContextDisplay();
+
+    // Visual feedback
+    document.querySelectorAll('.focus-btn').forEach(b => b.classList.remove('bg-purple-700'));
+    btn.classList.add('bg-purple-700');
+  });
+});
+
+document.getElementById('clear-focus').addEventListener('click', () => {
+  focusedEntity = null;
+  updateContextDisplay();
+  document.querySelectorAll('.focus-btn').forEach(b => b.classList.remove('bg-purple-700'));
+});
+
+function updateContextDisplay() {
+  const contextBox = document.getElementById('ai-context');
+  const contextContent = document.getElementById('ai-context-content');
+
+  if (focusedEntity) {
+    contextBox.classList.remove('hidden');
+
+    let displayText = `<strong>${focusedEntity.type.toUpperCase()}</strong> (ID: ${focusedEntity.id})<br>`;
+
+    if (focusedEntity.name) displayText += `Name: ${focusedEntity.name}<br>`;
+    if (focusedEntity.locationType) displayText += `Type: ${focusedEntity.locationType}<br>`;
+    if (focusedEntity.itemType) displayText += `Type: ${focusedEntity.itemType}<br>`;
+    if (focusedEntity.location) displayText += `Location: ${focusedEntity.location}<br>`;
+    if (focusedEntity.fromLocation) displayText += `From: ${focusedEntity.fromLocation} → ${focusedEntity.direction} → ${focusedEntity.toLocation}<br>`;
+    if (focusedEntity.hostile === 'true') displayText += `⚔️ HOSTILE<br>`;
+    if (focusedEntity.locked === 'true') displayText += `🔒 LOCKED<br>`;
+
+    contextContent.innerHTML = displayText;
+  } else {
+    contextBox.classList.add('hidden');
+  }
+}
+
+// Section collapse/expand handlers
+document.querySelectorAll('.section-header').forEach(header => {
+  header.addEventListener('click', () => {
+    const section = header.dataset.section;
+    const content = header.nextElementSibling;
+    const indicator = header.querySelector('.collapse-indicator');
+
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      indicator.textContent = '[−]';
+    } else {
+      content.style.display = 'none';
+      indicator.textContent = '[+]';
+    }
+  });
+});
+
+// Location tree expand/collapse handlers
+document.querySelectorAll('.expand-collapse-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const parentLocationId = btn.dataset.locationId;
+
+    // Find all direct children
+    const allLocations = document.querySelectorAll('.location-item');
+    const children = Array.from(allLocations).filter(loc =>
+      loc.dataset.parentId === parentLocationId
+    );
+
+    const isExpanded = btn.textContent === '[−]';
+
+    if (isExpanded) {
+      // Collapse: hide all descendants
+      btn.textContent = '[+]';
+
+      const hideDescendants = (parentId) => {
+        const directChildren = Array.from(allLocations).filter(loc =>
+          loc.dataset.parentId === parentId
+        );
+
+        directChildren.forEach(child => {
+          child.style.display = 'none';
+          // Also collapse their expand buttons
+          const childBtn = child.querySelector('.expand-collapse-btn');
+          if (childBtn) {
+            childBtn.textContent = '[+]';
+          }
+          // Recursively hide their children
+          hideDescendants(child.dataset.locationId);
+        });
+      };
+
+      hideDescendants(parentLocationId);
+    } else {
+      // Expand: show only direct children
+      btn.textContent = '[−]';
+      children.forEach(child => {
+        child.style.display = 'block';
+      });
+    }
+  });
+});
+
+// Description text toggle handlers
+document.querySelectorAll('.description-text').forEach(desc => {
+  desc.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isTruncated = desc.dataset.truncated === 'true';
+
+    if (!isTruncated) return; // Not truncated, nothing to toggle
+
+    const fullText = desc.dataset.fullText;
+    const currentText = desc.textContent;
+
+    // Check if currently showing full text
+    if (currentText === fullText) {
+      // Show truncated
+      desc.textContent = fullText.substring(0, 100) + '...';
+    } else {
+      // Show full text
+      desc.textContent = fullText;
+    }
+  });
+});
+
+// Undo/Redo handlers
+document.getElementById('undo-btn').addEventListener('click', () => {
+  performUndo();
+});
+
+document.getElementById('redo-btn').addEventListener('click', () => {
+  performRedo();
+});
+
+function showModal(tool) {
+  const overlay = document.getElementById('modal-overlay');
+  const content = document.getElementById('modal-content');
+
+  let html = '';
+
+  switch(tool) {
+    case 'location':
+      html = createLocationForm();
+      break;
+    case 'connection':
+      html = createConnectionForm();
+      break;
+    case 'character':
+      html = createCharacterForm();
+      break;
+    case 'item':
+      html = createItemForm();
+      break;
+    case 'container':
+      html = createContainerForm();
+      break;
+    case 'quest':
+      html = createQuestForm();
+      break;
+  }
+
+  content.innerHTML = html;
+  overlay.classList.remove('hidden');
+
+  // Set up dynamic form behaviors
+  if (tool === 'connection') {
+    setupConnectionFormListeners();
+  }
+}
+
+function showEditModal(type, id) {
+  // Fetch the entity data
+  fetch(`/worlds/builder/${worldId}/${type}s/${id}/edit`)
+    .then(res => res.json())
+    .then(data => {
+      const overlay = document.getElementById('modal-overlay');
+      const content = document.getElementById('modal-content');
+
+      let html = '';
+      switch(type) {
+        case 'location':
+          html = createLocationForm(data);
+          break;
+        case 'connection':
+          html = createConnectionForm(data);
+          break;
+        case 'character':
+          html = createCharacterForm(data);
+          break;
+        case 'item':
+          html = createItemForm(data);
+          break;
+        case 'container':
+          html = createContainerForm(data);
+          break;
+        case 'quest':
+          html = createQuestForm(data);
+          break;
+      }
+
+      content.innerHTML = html;
+      overlay.classList.remove('hidden');
+
+      // Set up dynamic form behaviors
+      if (type === 'connection') {
+        setupConnectionFormListeners();
+      }
+    })
+    .catch(err => {
+      console.error('Error fetching entity:', err);
+      alert('Error loading entity for editing');
+    });
+}
+
+function hideModal() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+}
+
+function setupConnectionFormListeners() {
+  const bidirectionalCheckbox = document.querySelector('input[name="is_bidirectional"]');
+  const reverseDescriptionContainer = document.getElementById('reverse-description-container');
+
+  if (bidirectionalCheckbox && reverseDescriptionContainer) {
+    bidirectionalCheckbox.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        reverseDescriptionContainer.style.display = '';
+      } else {
+        reverseDescriptionContainer.style.display = 'none';
+      }
+    });
+  }
+}
+
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-overlay') {
+    hideModal();
+  }
+});
+
+function createLocationForm(data = null) {
+  const isEdit = data !== null;
+  const title = isEdit ? 'EDIT LOCATION' : 'CREATE LOCATION';
+  const buttonText = isEdit ? 'UPDATE' : 'CREATE';
+
+  const types = ['indoor', 'outdoor', 'dungeon', 'cave', 'forest', 'town', 'building'];
+  const typeOptions = types.map(t =>
+    `<option value="${t}" ${data && data.location_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+  ).join('');
+
+  // Parent location options (exclude self if editing)
+  const parentLocationOptions = locations
+    .filter(l => !data || l.id !== data.id)
+    .map(l =>
+      `<option value="${l.id}" ${data && data.parent_location_id === l.id ? 'selected' : ''}>${l.name}</option>`
+    ).join('');
+
+  return `
+    <h2 class="text-xl font-bold text-green-400 mb-4">═══ ${title} ═══</h2>
+    <form id="entity-form" class="space-y-4" data-type="location" data-id="${data ? data.id : ''}">
+      <div>
+        <label class="block text-green-400 mb-2">Name *</label>
+        <input type="text" name="name" value="${data ? data.name : ''}" required class="w-full bg-gray-800 border-2 border-green-600 text-white px-3 py-2" />
+      </div>
+      <div>
+        <label class="block text-green-400 mb-2">Description</label>
+        <textarea name="description" rows="3" class="w-full bg-gray-800 border-2 border-green-600 text-white px-3 py-2">${data ? (data.description || '') : ''}</textarea>
+      </div>
+      <div>
+        <label class="block text-green-400 mb-2">Type</label>
+        <select name="location_type" class="w-full bg-gray-800 border-2 border-green-600 text-white px-3 py-2">
+          <option value="">Select type...</option>
+          ${typeOptions}
+        </select>
+      </div>
+      <div>
+        <label class="block text-green-400 mb-2">Parent Location</label>
+        <select name="parent_location_id" class="w-full bg-gray-800 border-2 border-green-600 text-white px-3 py-2">
+          <option value="">None (top-level location)</option>
+          ${parentLocationOptions}
+        </select>
+      </div>
+      <div class="flex justify-between items-center">
+        <div class="flex gap-4">
+          <button type="submit" class="bg-green-700 hover:bg-green-600 text-white px-6 py-2 border-2 border-green-500">
+            [${buttonText}]
+          </button>
+          <button type="button" onclick="hideModal()" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 border-2 border-gray-500">
+            [CANCEL]
+          </button>
+        </div>
+        ${isEdit ? `
+          <button type="button" onclick="if(confirm('Delete this location?')) { deleteEntity('location', ${data.id}); hideModal(); }" class="bg-red-700 hover:bg-red-600 text-white px-6 py-2 border-2 border-red-500">
+            [DELETE]
+          </button>
+        ` : ''}
+      </div>
+    </form>
+  `;
+}
+
+function createConnectionForm(data = null) {
+  const isEdit = data !== null;
+  const title = isEdit ? 'EDIT CONNECTION' : 'CREATE CONNECTION';
+  const buttonText = isEdit ? 'UPDATE' : 'CREATE';
+
+  const fromLocationOptions = locations.map(l =>
+    `<option value="${l.id}" ${data && data.from_location_id === l.id ? 'selected' : ''}>${l.name}</option>`
+  ).join('');
+
+  const toLocationOptions = locations.map(l =>
+    `<option value="${l.id}" ${data && data.to_location_id === l.id ? 'selected' : ''}>${l.name}</option>`
+  ).join('');
+
+  const itemOptions = items.map(i =>
+    `<option value="${i.id}" ${data && data.required_item_id === i.id ? 'selected' : ''}>${i.name}</option>`
+  ).join('');
+
+  const connectionType = data ? (data.connection_type || 'passage') : 'passage';
+  const connectionTypes = ['passage', 'door', 'portal', 'teleporter', 'magical'];
+
+  return `
+    <h2 class="text-xl font-bold text-blue-400 mb-4">═══ ${title} ═══</h2>
+    <form id="entity-form" class="space-y-4" data-type="connection" data-id="${data ? data.id : ''}">
+      <div>
+        <label class="block text-blue-400 mb-2">From Location *</label>
+        <select name="from_location_id" required class="w-full bg-gray-800 border-2 border-blue-600 text-white px-3 py-2">
+          <option value="">Select location...</option>
+          ${fromLocationOptions}
+        </select>
+      </div>
+      <div>
+        <label class="block text-blue-400 mb-2">Direction *</label>
+        <input type="text" name="direction" value="${data ? data.direction : ''}" required placeholder="north, south, up, down, etc." class="w-full bg-gray-800 border-2 border-blue-600 text-white px-3 py-2" />
+      </div>
+      <div>
+        <label class="block text-blue-400 mb-2">To Location *</label>
+        <select name="to_location_id" required class="w-full bg-gray-800 border-2 border-blue-600 text-white px-3 py-2">
+          <option value="">Select location...</option>
+          ${toLocationOptions}
+        </select>
+      </div>
+      <div>
+        <label class="block text-blue-400 mb-2">Connection Type</label>
+        <select name="connection_type" class="w-full bg-gray-800 border-2 border-blue-600 text-white px-3 py-2">
+          ${connectionTypes.map(type => `<option value="${type}" ${connectionType === type ? 'selected' : ''}>${type.charAt(0).toUpperCase() + type.slice(1)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-blue-400 mb-2">Description</label>
+        <textarea name="description" rows="2" placeholder="A narrow passage, a wooden door, etc." class="w-full bg-gray-800 border-2 border-blue-600 text-white px-3 py-2">${data ? (data.description || '') : ''}</textarea>
+      </div>
+      <div>
+        <label class="flex items-center text-blue-400">
+          <input type="checkbox" name="is_bidirectional" value="true" ${data && data.is_bidirectional ? 'checked' : ''} class="mr-2" />
+          Bidirectional (creates return path)
+        </label>
+      </div>
+      <div id="reverse-description-container" style="${data && data.is_bidirectional ? '' : 'display: none;'}">
+        <label class="block text-blue-400 mb-2">Reverse Description (for return path)</label>
+        <textarea name="reverse_description" rows="2" placeholder="Optional description for the return journey..." class="w-full bg-gray-800 border-2 border-blue-600 text-white px-3 py-2">${data ? (data.reverse_description || '') : ''}</textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="flex items-center text-blue-400">
+            <input type="checkbox" name="is_visible" value="true" ${data && data.is_visible !== false ? 'checked' : ''} class="mr-2" />
+            Visible to players
+          </label>
+        </div>
+        <div>
+          <label class="flex items-center text-blue-400">
+            <input type="checkbox" name="is_locked" value="true" ${data && data.is_locked ? 'checked' : ''} class="mr-2" />
+            Locked
+          </label>
+        </div>
+        <div>
+          <label class="flex items-center text-blue-400">
+            <input type="checkbox" name="is_open" value="true" ${data && data.is_open !== false ? 'checked' : ''} class="mr-2" />
+            Open (doors/gates)
+          </label>
+        </div>
+      </div>
+      <div>
+        <label class="block text-blue-400 mb-2">Required Item (key/item to unlock)</label>
+        <select name="required_item_id" class="w-full bg-gray-800 border-2 border-blue-600 text-white px-3 py-2">
+          <option value="">None</option>
+          ${itemOptions}
+        </select>
+      </div>
+      <div class="flex justify-between items-center">
+        <div class="flex gap-4">
+          <button type="submit" class="bg-blue-700 hover:bg-blue-600 text-white px-6 py-2 border-2 border-blue-500">
+            [${buttonText}]
+          </button>
+          <button type="button" onclick="hideModal()" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 border-2 border-gray-500">
+            [CANCEL]
+          </button>
+        </div>
+        ${isEdit ? `
+          <button type="button" onclick="if(confirm('Delete this connection?')) { deleteEntity('connection', ${data.id}); hideModal(); }" class="bg-red-700 hover:bg-red-600 text-white px-6 py-2 border-2 border-red-500">
+            [DELETE]
+          </button>
+        ` : ''}
+      </div>
+    </form>
+  `;
+}
+
+function createCharacterForm(data = null) {
+  const isEdit = data !== null;
+  const title = isEdit ? 'EDIT CHARACTER' : 'CREATE CHARACTER';
+  const buttonText = isEdit ? 'UPDATE' : 'CREATE';
+
+  const locationOptions = locations.map(l =>
+    `<option value="${l.id}" ${data && data.location_id === l.id ? 'selected' : ''}>${l.name}</option>`
+  ).join('');
+
+  return `
+    <h2 class="text-xl font-bold text-red-400 mb-4">═══ ${title} ═══</h2>
+    <form id="entity-form" class="space-y-4" data-type="character" data-id="${data ? data.id : ''}">
+      <div>
+        <label class="block text-red-400 mb-2">Name *</label>
+        <input type="text" name="name" value="${data ? data.name : ''}" required class="w-full bg-gray-800 border-2 border-red-600 text-white px-3 py-2" />
+      </div>
+      <div>
+        <label class="block text-red-400 mb-2">Description</label>
+        <textarea name="description" rows="3" class="w-full bg-gray-800 border-2 border-red-600 text-white px-3 py-2">${data ? (data.description || '') : ''}</textarea>
+      </div>
+      <div>
+        <label class="block text-red-400 mb-2">Starting Location</label>
+        <select name="location_id" class="w-full bg-gray-800 border-2 border-red-600 text-white px-3 py-2">
+          <option value="">No specific location</option>
+          ${locationOptions}
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-red-400 mb-2">Max HP</label>
+          <input type="number" name="max_hp" value="${data ? data.max_hp : 10}" class="w-full bg-gray-800 border-2 border-red-600 text-white px-3 py-2" />
+        </div>
+        <div>
+          <label class="block text-red-400 mb-2">Strength</label>
+          <input type="number" name="strength" value="${data ? data.strength : 10}" class="w-full bg-gray-800 border-2 border-red-600 text-white px-3 py-2" />
+        </div>
+        <div>
+          <label class="block text-red-400 mb-2">Intelligence</label>
+          <input type="number" name="intelligence" value="${data ? data.intelligence : 10}" class="w-full bg-gray-800 border-2 border-red-600 text-white px-3 py-2" />
+        </div>
+        <div>
+          <label class="block text-red-400 mb-2">Charisma</label>
+          <input type="number" name="charisma" value="${data ? data.charisma : 10}" class="w-full bg-gray-800 border-2 border-red-600 text-white px-3 py-2" />
+        </div>
+        <div>
+          <label class="block text-red-400 mb-2">Gold</label>
+          <input type="number" name="gold" value="${data ? (data.gold || 0) : 0}" class="w-full bg-gray-800 border-2 border-red-600 text-white px-3 py-2" />
+        </div>
+      </div>
+      <div>
+        <label class="flex items-center text-red-400">
+          <input type="checkbox" name="is_hostile" value="true" ${data && data.is_hostile ? 'checked' : ''} class="mr-2" />
+          Hostile (will attack players)
+        </label>
+      </div>
+      <div class="flex justify-between items-center">
+        <div class="flex gap-4">
+          <button type="submit" class="bg-red-700 hover:bg-red-600 text-white px-6 py-2 border-2 border-red-500">
+            [${buttonText}]
+          </button>
+          <button type="button" onclick="hideModal()" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 border-2 border-gray-500">
+            [CANCEL]
+          </button>
+        </div>
+        ${isEdit ? `
+          <button type="button" onclick="if(confirm('Delete this character?')) { deleteEntity('character', ${data.id}); hideModal(); }" class="bg-red-900 hover:bg-red-800 text-white px-6 py-2 border-2 border-red-700">
+            [DELETE]
+          </button>
+        ` : ''}
+      </div>
+    </form>
+  `;
+}
+
+function createItemForm(data = null) {
+  const isEdit = data !== null;
+  const title = isEdit ? 'EDIT ITEM' : 'CREATE ITEM';
+  const buttonText = isEdit ? 'UPDATE' : 'CREATE';
+
+  const locationOptions = locations.map(l =>
+    `<option value="${l.id}" ${data && data.location_id === l.id ? 'selected' : ''}>${l.name}</option>`
+  ).join('');
+
+  const itemTypes = ['misc', 'weapon', 'armor', 'potion', 'key', 'treasure', 'food'];
+  const typeOptions = itemTypes.map(t =>
+    `<option value="${t}" ${data && data.item_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+  ).join('');
+
+  return `
+    <h2 class="text-xl font-bold text-yellow-400 mb-4">═══ ${title} ═══</h2>
+    <form id="entity-form" class="space-y-4" data-type="item" data-id="${data ? data.id : ''}">
+      <div>
+        <label class="block text-yellow-400 mb-2">Name *</label>
+        <input type="text" name="name" value="${data ? data.name : ''}" required class="w-full bg-gray-800 border-2 border-yellow-600 text-white px-3 py-2" />
+      </div>
+      <div>
+        <label class="block text-yellow-400 mb-2">Description</label>
+        <textarea name="description" rows="3" class="w-full bg-gray-800 border-2 border-yellow-600 text-white px-3 py-2">${data ? (data.description || '') : ''}</textarea>
+      </div>
+      <div>
+        <label class="block text-yellow-400 mb-2">Location</label>
+        <select name="location_id" class="w-full bg-gray-800 border-2 border-yellow-600 text-white px-3 py-2">
+          <option value="">No specific location</option>
+          ${locationOptions}
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-yellow-400 mb-2">Type</label>
+          <select name="item_type" class="w-full bg-gray-800 border-2 border-yellow-600 text-white px-3 py-2">
+            ${typeOptions}
+          </select>
+        </div>
+        <div>
+          <label class="block text-yellow-400 mb-2">Cost (gold)</label>
+          <input type="number" name="cost" value="${data ? (data.cost || 0) : 0}" placeholder="0" class="w-full bg-gray-800 border-2 border-yellow-600 text-white px-3 py-2" />
+        </div>
+      </div>
+      <div class="flex justify-between items-center">
+        <div class="flex gap-4">
+          <button type="submit" class="bg-yellow-700 hover:bg-yellow-600 text-white px-6 py-2 border-2 border-yellow-500">
+            [${buttonText}]
+          </button>
+          <button type="button" onclick="hideModal()" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 border-2 border-gray-500">
+            [CANCEL]
+          </button>
+        </div>
+        ${isEdit ? `
+          <button type="button" onclick="if(confirm('Delete this item?')) { deleteEntity('item', ${data.id}); hideModal(); }" class="bg-red-700 hover:bg-red-600 text-white px-6 py-2 border-2 border-red-500">
+            [DELETE]
+          </button>
+        ` : ''}
+      </div>
+    </form>
+  `;
+}
+
+function createContainerForm(data = null) {
+  const isEdit = data !== null;
+  const title = isEdit ? 'EDIT CONTAINER' : 'CREATE CONTAINER';
+  const buttonText = isEdit ? 'UPDATE' : 'CREATE';
+
+  const locationOptions = locations.map(l =>
+    `<option value="${l.id}" ${data && data.location_id === l.id ? 'selected' : ''}>${l.name}</option>`
+  ).join('');
+
+  return `
+    <h2 class="text-xl font-bold text-purple-400 mb-4">═══ ${title} ═══</h2>
+    <form id="entity-form" class="space-y-4" data-type="container" data-id="${data ? data.id : ''}">
+      <div>
+        <label class="block text-purple-400 mb-2">Name *</label>
+        <input type="text" name="name" value="${data ? data.name : ''}" required placeholder="Chest, Barrel, Cabinet, etc." class="w-full bg-gray-800 border-2 border-purple-600 text-white px-3 py-2" />
+      </div>
+      <div>
+        <label class="block text-purple-400 mb-2">Description</label>
+        <textarea name="description" rows="3" class="w-full bg-gray-800 border-2 border-purple-600 text-white px-3 py-2">${data ? (data.description || '') : ''}</textarea>
+      </div>
+      <div>
+        <label class="block text-purple-400 mb-2">Location</label>
+        <select name="location_id" class="w-full bg-gray-800 border-2 border-purple-600 text-white px-3 py-2">
+          <option value="">No specific location</option>
+          ${locationOptions}
+        </select>
+      </div>
+      <div>
+        <label class="flex items-center text-purple-400">
+          <input type="checkbox" name="is_locked" value="true" ${data && data.is_locked ? 'checked' : ''} class="mr-2" />
+          Locked
+        </label>
+      </div>
+      <div class="flex justify-between items-center">
+        <div class="flex gap-4">
+          <button type="submit" class="bg-purple-700 hover:bg-purple-600 text-white px-6 py-2 border-2 border-purple-500">
+            [${buttonText}]
+          </button>
+          <button type="button" onclick="hideModal()" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 border-2 border-gray-500">
+            [CANCEL]
+          </button>
+        </div>
+        ${isEdit ? `
+          <button type="button" onclick="if(confirm('Delete this container?')) { deleteEntity('container', ${data.id}); hideModal(); }" class="bg-red-700 hover:bg-red-600 text-white px-6 py-2 border-2 border-red-500">
+            [DELETE]
+          </button>
+        ` : ''}
+      </div>
+    </form>
+  `;
+}
+
+function createQuestForm(data = null) {
+  const isEdit = data !== null;
+  const title = isEdit ? 'EDIT QUEST' : 'CREATE QUEST';
+  const buttonText = isEdit ? 'UPDATE' : 'CREATE';
+
+  const questTypes = ['main', 'side', 'daily', 'achievement'];
+  const typeOptions = questTypes.map(t =>
+    `<option value="${t}" ${data && data.quest_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+  ).join('');
+
+  const statuses = ['active', 'completed', 'failed', 'hidden'];
+  const statusOptions = statuses.map(s =>
+    `<option value="${s}" ${data && data.status === s ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
+  ).join('');
+
+  // Build objectives HTML
+  const objectives = data && data.objectives ? data.objectives : [];
+  let objectivesHTML = `
+    <div>
+      <label class="block text-orange-400 mb-2">Quest Objectives</label>
+      <div id="objectives-container" class="space-y-2">
+        ${objectives.map((obj, idx) => `
+          <div class="objective-item bg-gray-800 border-2 border-orange-600 p-3" data-objective-id="${obj.id || ''}">
+            <div class="flex gap-2 items-start">
+              <div class="flex-1">
+                <input type="text"
+                       class="w-full bg-gray-900 border border-orange-500 text-white px-2 py-1 text-sm mb-2"
+                       placeholder="Objective description..."
+                       value="${obj.description || ''}"
+                       data-field="description" />
+                <label class="flex items-center text-sm text-orange-400">
+                  <input type="checkbox"
+                         class="mr-2"
+                         ${obj.is_completed ? 'checked' : ''}
+                         data-field="is_completed" />
+                  Completed
+                </label>
+              </div>
+              <button type="button" class="remove-objective-btn text-red-400 hover:text-red-300 text-sm px-2 py-1">
+                [X]
+              </button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <button type="button" id="add-objective-btn" class="mt-2 bg-orange-800 hover:bg-orange-700 text-white px-3 py-1 text-sm border border-orange-600">
+        [+ Add Objective]
+      </button>
+    </div>
+  `;
+
+  return `
+    <h2 class="text-xl font-bold text-orange-400 mb-4">═══ ${title} ═══</h2>
+    <form id="entity-form" class="space-y-4" data-type="quest" data-id="${data ? data.id : ''}">
+      <div>
+        <label class="block text-orange-400 mb-2">Name *</label>
+        <input type="text" name="name" value="${data ? data.name : ''}" required placeholder="e.g., Rescue the Princess" class="w-full bg-gray-800 border-2 border-orange-600 text-white px-3 py-2" />
+      </div>
+      <div>
+        <label class="block text-orange-400 mb-2">Description</label>
+        <textarea name="description" rows="3" placeholder="Describe the quest objective and story..." class="w-full bg-gray-800 border-2 border-orange-600 text-white px-3 py-2">${data ? (data.description || '') : ''}</textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-orange-400 mb-2">Type</label>
+          <select name="quest_type" class="w-full bg-gray-800 border-2 border-orange-600 text-white px-3 py-2">
+            ${typeOptions}
+          </select>
+        </div>
+        <div>
+          <label class="block text-orange-400 mb-2">Status</label>
+          <select name="status" class="w-full bg-gray-800 border-2 border-orange-600 text-white px-3 py-2">
+            ${statusOptions}
+          </select>
+        </div>
+      </div>
+      ${objectivesHTML}
+      <div class="flex justify-between items-center">
+        <div class="flex gap-4">
+          <button type="submit" class="bg-orange-700 hover:bg-orange-600 text-white px-6 py-2 border-2 border-orange-500">
+            [${buttonText}]
+          </button>
+          <button type="button" onclick="hideModal()" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 border-2 border-gray-500">
+            [CANCEL]
+          </button>
+        </div>
+        ${isEdit ? `
+          <button type="button" onclick="if(confirm('Delete this quest?')) { deleteEntity('quest', ${data.id}); hideModal(); }" class="bg-red-700 hover:bg-red-600 text-white px-6 py-2 border-2 border-red-500">
+            [DELETE]
+          </button>
+        ` : ''}
+      </div>
+    </form>
+  `;
+}
+
+// Objective management handlers
+document.addEventListener('click', (e) => {
+  // Add objective button
+  if (e.target.id === 'add-objective-btn') {
+    const container = document.getElementById('objectives-container');
+    const newObjective = document.createElement('div');
+    newObjective.className = 'objective-item bg-gray-800 border-2 border-orange-600 p-3';
+    newObjective.setAttribute('data-objective-id', '');
+    newObjective.innerHTML = `
+      <div class="flex gap-2 items-start">
+        <div class="flex-1">
+          <input type="text"
+                 class="w-full bg-gray-900 border border-orange-500 text-white px-2 py-1 text-sm mb-2"
+                 placeholder="Objective description..."
+                 value=""
+                 data-field="description" />
+          <label class="flex items-center text-sm text-orange-400">
+            <input type="checkbox"
+                   class="mr-2"
+                   data-field="is_completed" />
+            Completed
+          </label>
+        </div>
+        <button type="button" class="remove-objective-btn text-red-400 hover:text-red-300 text-sm px-2 py-1">
+          [X]
+        </button>
+      </div>
+    `;
+    container.appendChild(newObjective);
+  }
+
+  // Remove objective button
+  if (e.target.classList.contains('remove-objective-btn')) {
+    e.target.closest('.objective-item').remove();
+  }
+});
+
+// Form submission handler
+document.addEventListener('submit', async (e) => {
+  if (e.target.id === 'entity-form') {
+    e.preventDefault();
+
+    const entityType = e.target.dataset.type;
+    const entityId = e.target.dataset.id;
+
+    const formData = new FormData(e.target);
+    const params = {};
+    for (let [key, value] of formData.entries()) {
+      params[key] = value;
+    }
+
+    // Collect objectives data if this is a quest form
+    if (entityType === 'quest') {
+      const objectivesContainer = document.getElementById('objectives-container');
+      if (objectivesContainer) {
+        const objectiveItems = objectivesContainer.querySelectorAll('.objective-item');
+        const objectives = [];
+
+        objectiveItems.forEach(item => {
+          const id = item.dataset.objectiveId;
+          const description = item.querySelector('[data-field="description"]').value.trim();
+          const isCompleted = item.querySelector('[data-field="is_completed"]').checked;
+
+          if (description) {  // Only include objectives with descriptions
+            objectives.push({
+              id: id || null,
+              description: description,
+              is_completed: isCompleted
+            });
+          }
+        });
+
+        params.objectives = objectives;
+      }
+    }
+    const isEdit = entityId !== '';
+
+    try {
+      let response;
+      if (isEdit) {
+        // Update existing entity
+        response = await fetch(`/worlds/builder/${worldId}/${entityType}s/${entityId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params)
+        });
+      } else {
+        // Create new entity
+        const actionType = `create_${entityType}`;
+        response = await fetch(`/worlds/builder/${worldId}/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action_type: actionType, params: params })
+        });
+      }
+
+      const result = await response.json();
+
+      if (result.success || !result.error) {
+        hideModal();
+        window.location.reload();
+      } else {
+        alert('Error: ' + result.error);
+      }
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+});
+
+async function deleteEntity(type, id) {
+  try {
+    const response = await fetch(`/worlds/builder/${worldId}/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action_type: `delete_${type}`,
+        params: { [`${type}_id`]: id }
+      })
+    });
+
+    const result = await response.json();
+
+    if (!result.success) {
+      alert('Error: ' + result.error);
+    }
+    // Success - DOM will be updated via WebSocket, no reload needed
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+}
+
+async function performUndo() {
+  try {
+    const response = await fetch(`/worlds/builder/${worldId}/undo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const result = await response.json();
+
+    if (!result.success) {
+      alert('Error: ' + result.error);
+    }
+    // TODO: Undo/redo need proper WebSocket DOM updates on server side
+    // For now, no reload - changes may not be visible until manual refresh
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+}
+
+async function performRedo() {
+  try {
+    const response = await fetch(`/worlds/builder/${worldId}/redo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const result = await response.json();
+
+    if (!result.success) {
+      alert('Error: ' + result.error);
+    }
+    // TODO: Undo/redo need proper WebSocket DOM updates on server side
+    // For now, no reload - changes may not be visible until manual refresh
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+}
+
+// ========== AI ASSISTANT WEBSOCKET ==========
+
+let aiWs = null;
+let currentAIMessage = null;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
+let hasReconnected = false;
+
+function connectAIWebSocket() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  aiWs = new WebSocket(`${protocol}//${window.location.host}/ws/builder?world_id=${worldId}`);
+
+  aiWs.onopen = () => {
+    console.log('[AI] WebSocket connected');
+    reconnectAttempts = 0;
+
+    // Auto-reload after reconnection to ensure fresh state
+    if (hasReconnected) {
+      console.log('[AI] Reconnected - reloading page to sync state');
+      window.location.reload();
+    }
+    hasReconnected = true;
+  };
+
+  aiWs.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log('[AI] Message received:', data.type);
+
+    switch(data.type) {
+      case 'ai_thinking':
+        toggleThinkingStatus(data.status);
+        break;
+
+      case 'ai_message_chunk':
+        appendOrUpdateAIMessage(data.content, false);
+        break;
+
+      case 'ai_message_complete':
+        appendOrUpdateAIMessage('', true);
+        break;
+
+      case 'approval_request':
+        showApprovalPreview(data.request_id, data.entities);
+        break;
+
+      case 'execution_complete':
+        handleExecutionComplete(data.results);
+        break;
+
+      case 'dom_update':
+        handleDOMUpdate(data);
+        break;
+
+      case 'error':
+        showAIError(data.message);
+        break;
+    }
+  };
+
+  aiWs.onerror = (error) => {
+    console.error('[AI] WebSocket error:', error);
+  };
+
+  aiWs.onclose = () => {
+    console.log('[AI] WebSocket closed');
+
+    // Attempt to reconnect with exponential backoff
+    if (reconnectAttempts < maxReconnectAttempts) {
+      reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      console.log(`[AI] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+      setTimeout(connectAIWebSocket, delay);
+    } else {
+      showAIError('Connection lost. Please refresh the page.');
+    }
+  };
+}
+
+// Initialize WebSocket connection
+connectAIWebSocket();
+
+// AI Input Form Handler
+document.getElementById('ai-input-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+
+  const input = document.getElementById('ai-input');
+  const message = input.value.trim();
+
+  if (!message || !aiWs || aiWs.readyState !== WebSocket.OPEN) {
+    if (!aiWs || aiWs.readyState !== WebSocket.OPEN) {
+      showAIError('Not connected. Please wait or refresh the page.');
+    }
+    return;
+  }
+
+  // Show user message
+  appendUserMessage(message);
+
+  // Send to AI with optional context
+  const payload = {
+    type: 'builder_message',
+    message: message
+  };
+
+  if (focusedEntity) {
+    payload.context = focusedEntity;
+  }
+
+  aiWs.send(JSON.stringify(payload));
+
+  // Clear input
+  input.value = '';
+});
+
+// Clear Conversation Handler
+document.getElementById('clear-conversation').addEventListener('click', () => {
+  if (confirm('Clear AI conversation history? This will start fresh but cannot be undone.')) {
+    fetch(`/worlds/builder/${worldId}/clear-conversation`, { method: 'POST' })
+      .then(() => window.location.reload())
+      .catch(err => alert('Error clearing conversation: ' + err.message));
+  }
+});
+
+// Message Display Functions
+
+function appendUserMessage(message) {
+  const messagesDiv = document.getElementById('ai-messages');
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'border-l-4 border-green-500 pl-3 py-2 bg-gray-800';
+  msgDiv.innerHTML = `
+    <div class="text-green-400 text-sm font-bold mb-1">YOU</div>
+    <div class="text-gray-300 whitespace-pre-wrap">${escapeHtml(message)}</div>
+  `;
+  messagesDiv.appendChild(msgDiv);
+  scrollToBottom();
+}
+
+function appendOrUpdateAIMessage(content, complete) {
+  const messagesDiv = document.getElementById('ai-messages');
+
+  if (!currentAIMessage) {
+    currentAIMessage = document.createElement('div');
+    currentAIMessage.className = 'border-l-4 border-purple-500 pl-3 py-2 bg-gray-800';
+    currentAIMessage.innerHTML = `
+      <div class="text-purple-400 text-sm font-bold mb-1">AI ASSISTANT</div>
+      <div class="text-gray-300 whitespace-pre-wrap ai-content"></div>
+    `;
+    messagesDiv.appendChild(currentAIMessage);
+  }
+
+  const contentDiv = currentAIMessage.querySelector('.ai-content');
+  if (content) {
+    contentDiv.textContent += content;
+  }
+
+  if (complete) {
+    currentAIMessage = null;
+  }
+
+  scrollToBottom();
+}
+
+function showApprovalPreview(requestId, entities) {
+  const messagesDiv = document.getElementById('ai-messages');
+  const previewDiv = document.createElement('div');
+  previewDiv.className = 'border-2 border-yellow-600 p-3 bg-gray-800';
+
+  let entitiesHTML = '';
+  entities.forEach((entity, index) => {
+    entitiesHTML += `
+      <div class="text-sm mb-2 ${index > 0 ? 'mt-2 pt-2 border-t border-gray-700' : ''}">
+        <div class="text-gray-300 whitespace-pre-wrap">${escapeHtml(entity.preview)}</div>
+      </div>
+    `;
+  });
+
+  // Check if auto-approve is enabled
+  const autoApproveCheckbox = document.getElementById('auto-approve-checkbox');
+  const isAutoApprove = autoApproveCheckbox && autoApproveCheckbox.checked;
+
+  previewDiv.innerHTML = `
+    <div class="text-yellow-400 text-sm font-bold mb-2">${isAutoApprove ? '⚡ AUTO-APPROVED' : '⚡ APPROVAL REQUIRED'}</div>
+    <div class="text-xs text-gray-500 mb-3">${entities.length} entit${entities.length === 1 ? 'y' : 'ies'} to create:</div>
+    ${entitiesHTML}
+    <div class="flex gap-2 mt-3">
+      <button class="approve-btn flex-1 bg-green-700 hover:bg-green-600 text-white px-3 py-2 border-2 border-green-500 text-sm font-bold whitespace-nowrap"
+              data-request-id="${requestId}">
+        [✓ APPROVE]
+      </button>
+      <button class="reject-btn flex-1 bg-red-700 hover:bg-red-600 text-white px-3 py-2 border-2 border-red-500 text-sm font-bold whitespace-nowrap"
+              data-request-id="${requestId}">
+        [✗ REJECT]
+      </button>
+    </div>
+  `;
+
+  messagesDiv.appendChild(previewDiv);
+  scrollToBottom();
+
+  // Attach handlers to approval buttons
+  previewDiv.querySelector('.approve-btn').addEventListener('click', () => {
+    handleApprovalResponse(requestId, true, previewDiv);
+  });
+
+  previewDiv.querySelector('.reject-btn').addEventListener('click', () => {
+    handleApprovalResponse(requestId, false, previewDiv);
+  });
+
+  // Auto-approve if checkbox is enabled
+  if (isAutoApprove) {
+    // Use setTimeout to ensure DOM is ready
+    setTimeout(() => {
+      handleApprovalResponse(requestId, true, previewDiv);
+    }, 100);
+  }
+}
+
+function handleApprovalResponse(requestId, approved, previewDiv) {
+  // Disable buttons
+  const buttons = previewDiv.querySelectorAll('button');
+  buttons.forEach(btn => {
+    btn.disabled = true;
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+  });
+
+  // Update preview to show decision
+  const statusDiv = document.createElement('div');
+  statusDiv.className = `text-sm font-bold mt-2 ${approved ? 'text-green-400' : 'text-red-400'}`;
+  statusDiv.textContent = approved ? '✓ Approved - Creating...' : '✗ Rejected';
+  previewDiv.appendChild(statusDiv);
+
+  // Send approval response via WebSocket
+  if (aiWs && aiWs.readyState === WebSocket.OPEN) {
+    aiWs.send(JSON.stringify({
+      type: 'approval_response',
+      request_id: requestId,
+      approved: approved
+    }));
+  }
+}
+
+function handleExecutionComplete(results) {
+  const messagesDiv = document.getElementById('ai-messages');
+  const resultDiv = document.createElement('div');
+  resultDiv.className = 'border-l-4 border-purple-500 pl-3 py-2 bg-gray-800';
+
+  const successCount = results.filter(r => r.success).length;
+  const failCount = results.length - successCount;
+
+  let resultHTML = `<div class="text-purple-400 text-sm font-bold mb-1">EXECUTION RESULTS</div>`;
+  resultHTML += `<div class="text-xs text-gray-500 mb-2">${successCount} succeeded, ${failCount} failed</div>`;
+
+  results.forEach(result => {
+    if (result.success) {
+      resultHTML += `<div class="text-sm text-green-400">✓ Created ${result.entity_type}${result.name ? ': ' + result.name : ''}</div>`;
+    } else {
+      resultHTML += `<div class="text-sm text-red-400">✗ Failed ${result.entity_type}: ${result.error}</div>`;
+    }
+  });
+
+  resultDiv.innerHTML = resultHTML;
+  messagesDiv.appendChild(resultDiv);
+  scrollToBottom();
+}
+
+// ========== DOM UPDATE HANDLER ==========
+
+function updateEntityArray(entityType, entityId, entityData, operation) {
+  // Update the global entity arrays based on the operation
+  let array;
+  switch(entityType) {
+    case 'location':
+      array = allLocations;
+      break;
+    case 'character':
+      array = allCharacters;
+      break;
+    case 'item':
+      array = allItems;
+      break;
+    case 'container':
+      array = allContainers;
+      break;
+    case 'connection':
+      array = allConnections;
+      break;
+    default:
+      return;
+  }
+
+  if (operation === 'add') {
+    // Add new entity to array
+    array.push(entityData);
+  } else if (operation === 'update') {
+    // Update existing entity in array
+    const index = array.findIndex(e => e.id === entityId);
+    if (index !== -1) {
+      array[index] = { ...array[index], ...entityData };
+    }
+  } else if (operation === 'remove') {
+    // Remove entity from array
+    const index = array.findIndex(e => e.id === entityId);
+    if (index !== -1) {
+      array.splice(index, 1);
+    }
+  }
+}
+
+function handleDOMUpdate(update) {
+  const { action, target, html, entity_type, entity_id, entity_data } = update;
+
+  console.log(`[DOM] ${action} ${entity_type} at ${target}`);
+
+  switch(action) {
+    case 'append':
+      appendEntity(target, html, entity_type, entity_id, entity_data);
+      break;
+    case 'replace':
+      replaceEntity(target, html, entity_type, entity_id, entity_data);
+      break;
+    case 'remove':
+      removeEntity(target, entity_type, entity_id);
+      break;
+    case 'update_stats':
+      updateStat(target, html);
+      break;
+  }
+}
+
+function appendEntity(target, html, entityType, entityId, entityData) {
+  const container = document.querySelector(target);
+  if (!container) {
+    console.error(`[DOM] Target not found: ${target}`);
+    return;
+  }
+
+  // Remove empty state message if present
+  const emptyMsg = container.querySelector('.text-gray-500');
+  if (emptyMsg?.textContent.includes('No ')) {
+    emptyMsg.remove();
+  }
+
+  // Parse and append HTML
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  const newElement = temp.firstElementChild;
+
+  container.appendChild(newElement);
+  attachEntityEventListeners(newElement, entityType, entityId);
+
+  // Update global entity arrays for map rendering
+  if (entityData) {
+    updateEntityArray(entityType, entityId, entityData, 'add');
+    renderMap();  // Re-render map with new entity
+  }
+
+  // Flash animation (green for create)
+  newElement.classList.add('animate-flash-create');
+  setTimeout(() => newElement.classList.remove('animate-flash-create'), 1000);
+}
+
+function replaceEntity(target, html, entityType, entityId, entityData) {
+  const oldElement = document.querySelector(target);
+  if (!oldElement) {
+    console.error(`[DOM] Target not found: ${target}`);
+    return;
+  }
+
+  // Preserve UI state
+  const wasExpanded = oldElement.querySelector('.expand-collapse-btn')?.textContent === '[−]';
+
+  // Parse and replace
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  const newElement = temp.firstElementChild;
+
+  oldElement.replaceWith(newElement);
+  attachEntityEventListeners(newElement, entityType, entityId);
+
+  // Update global entity arrays for map rendering
+  if (entityData) {
+    updateEntityArray(entityType, entityId, entityData, 'update');
+    renderMap();  // Re-render map with updated entity
+  }
+
+  // Restore expansion state for locations
+  if (wasExpanded && entityType === 'location') {
+    const expandBtn = newElement.querySelector('.expand-collapse-btn');
+    if (expandBtn) {
+      expandBtn.textContent = '[−]';
+      showLocationChildren(newElement.dataset.locationId);
+    }
+  }
+
+  // Flash animation (yellow for update)
+  newElement.classList.add('animate-flash-update');
+  setTimeout(() => newElement.classList.remove('animate-flash-update'), 500);
+}
+
+function removeEntity(target, entityType, entityId) {
+  const element = document.querySelector(target);
+  if (!element) {
+    console.error(`[DOM] Target not found: ${target}`);
+    return;
+  }
+
+  // Update global entity arrays for map rendering
+  updateEntityArray(entityType, entityId, null, 'remove');
+
+  // Fade out animation
+  element.style.transition = 'opacity 300ms';
+  element.style.opacity = '0';
+
+  setTimeout(() => {
+    element.remove();
+
+    // Check if list is empty, add empty state message
+    const container = element.closest('[id$="-list"]');
+    if (container && !container.querySelector(`[data-${entityType}-id]`)) {
+      container.innerHTML = `<p class="text-gray-500">No ${entityType}s yet. Use the toolbox or AI assistant to create one.</p>`;
+    }
+
+    // Re-render map after removal animation
+    renderMap();
+  }, 300);
+}
+
+function updateStat(target, value) {
+  const statElement = document.querySelector(target);
+  if (!statElement) {
+    console.error(`[DOM] Stat target not found: ${target}`);
+    return;
+  }
+
+  // Pulse animation
+  statElement.classList.add('animate-pulse-stat');
+  statElement.textContent = value;
+  setTimeout(() => statElement.classList.remove('animate-pulse-stat'), 500);
+}
+
+function attachEntityEventListeners(element, entityType, entityId) {
+  // Re-attach all event listeners (delete, edit, focus, description toggle, expand/collapse)
+  // This ensures new/updated elements are interactive
+
+  const deleteBtn = element.querySelector('.delete-btn');
+  deleteBtn?.addEventListener('click', () => {
+    if (confirm(`Delete this ${entityType}?`)) {
+      deleteEntity(entityType, entityId);
+    }
+  });
+
+  const editBtn = element.querySelector('.edit-btn');
+  editBtn?.addEventListener('click', () => {
+    showEditModal(entityType, entityId);
+  });
+
+  const focusBtn = element.querySelector('.focus-btn');
+  focusBtn?.addEventListener('click', () => {
+    focusedEntity = { type: entityType, id: entityId, ...focusBtn.dataset };
+    updateContextDisplay();
+    document.querySelectorAll('.focus-btn').forEach(b => b.classList.remove('bg-purple-700'));
+    focusBtn.classList.add('bg-purple-700');
+  });
+
+  const descText = element.querySelector('.description-text');
+  descText?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (descText.dataset.truncated !== 'true') return;
+    const fullText = descText.dataset.fullText;
+    const isExpanded = descText.textContent === fullText;
+    descText.textContent = isExpanded ? fullText.substring(0, 100) + '...' : fullText;
+  });
+
+  if (entityType === 'location') {
+    const expandBtn = element.querySelector('.expand-collapse-btn');
+    expandBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const locationId = element.dataset.locationId;
+      const isExpanded = expandBtn.textContent === '[−]';
+      expandBtn.textContent = isExpanded ? '[+]' : '[−]';
+      isExpanded ? hideLocationChildren(locationId) : showLocationChildren(locationId);
+    });
+  }
+}
+
+function hideLocationChildren(parentId) {
+  document.querySelectorAll(`[data-parent-id="${parentId}"]`).forEach(child => {
+    child.style.display = 'none';
+    const btn = child.querySelector('.expand-collapse-btn');
+    if (btn) btn.textContent = '[+]';
+    hideLocationChildren(child.dataset.locationId);
+  });
+}
+
+function showLocationChildren(parentId) {
+  document.querySelectorAll(`[data-parent-id="${parentId}"]`).forEach(child => {
+    child.style.display = 'block';
+  });
+}
+
+function showAIError(message) {
+  const messagesDiv = document.getElementById('ai-messages');
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'border-l-4 border-red-500 pl-3 py-2 bg-gray-800';
+  errorDiv.innerHTML = `
+    <div class="text-red-400 text-sm font-bold mb-1">ERROR</div>
+    <div class="text-gray-300 text-sm">${escapeHtml(message)}</div>
+  `;
+  messagesDiv.appendChild(errorDiv);
+  scrollToBottom();
+}
+
+function toggleThinkingStatus(isThinking) {
+  const statusDiv = document.getElementById('ai-status');
+  if (isThinking) {
+    statusDiv.classList.remove('hidden');
+  } else {
+    statusDiv.classList.add('hidden');
+  }
+}
+
+function scrollToBottom() {
+  const messagesDiv = document.getElementById('ai-messages');
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ========== MAP VIEW ==========
+
+let currentMapParentId = null; // null = world view, number = viewing inside a location
+const CELL_SIZE = 120; // pixels per cell (larger for better visibility)
+const CELL_SPACING = 30; // spacing between cells
+const PADDING = 40; // padding around the map
+
+// Toggle between list view and map view
+document.getElementById('view-toggle-btn').addEventListener('click', () => {
+  const listView = document.getElementById('list-view');
+  const mapView = document.getElementById('map-view');
+  const btn = document.getElementById('view-toggle-btn');
+
+  if (listView.style.display === 'none') {
+    // Switch to list view
+    listView.style.display = '';
+    mapView.style.display = 'none';
+    btn.textContent = '[🗺 MAP VIEW]';
+  } else {
+    // Switch to map view
+    listView.style.display = 'none';
+    mapView.style.display = '';
+    btn.textContent = '[📋 LIST VIEW]';
+    renderMap();
+  }
+});
+
+// Dynamic layout based on connections and hierarchy
+function layoutLocations(locations, connections) {
+  if (locations.length === 0) return [];
+
+  const positions = [];
+  const COLS = Math.ceil(Math.sqrt(locations.length * 1.5)); // wider than tall
+
+  // Build connection graph
+  const graph = {};
+  locations.forEach(loc => {
+    graph[loc.id] = { location: loc, connections: [] };
+  });
+
+  connections.forEach(conn => {
+    if (graph[conn.from_location_id] && graph[conn.to_location_id]) {
+      graph[conn.from_location_id].connections.push(conn.to_location_id);
+      if (conn.is_bidirectional) {
+        graph[conn.to_location_id].connections.push(conn.from_location_id);
+      }
+    }
+  });
+
+  // Find clusters of connected locations
+  const visited = new Set();
+  const clusters = [];
+
+  locations.forEach(loc => {
+    if (visited.has(loc.id)) return;
+
+    const cluster = [];
+    const queue = [loc.id];
+
+    while (queue.length > 0) {
+      const id = queue.shift();
+      if (visited.has(id)) continue;
+
+      visited.add(id);
+      cluster.push(id);
+
+      if (graph[id]) {
+        graph[id].connections.forEach(connId => {
+          if (!visited.has(connId)) {
+            queue.push(connId);
+          }
+        });
+      }
+    }
+
+    clusters.push(cluster);
+  });
+
+  // Layout each cluster
+  let clusterOffsetX = 0;
+  let maxClusterHeight = 0;
+
+  clusters.forEach(cluster => {
+    const clusterLocations = cluster.map(id => locations.find(l => l.id === id));
+    const clusterCols = Math.ceil(Math.sqrt(clusterLocations.length));
+
+    clusterLocations.forEach((loc, idx) => {
+      const col = idx % clusterCols;
+      const row = Math.floor(idx / clusterCols);
+
+      positions.push({
+        id: loc.id,
+        x: clusterOffsetX + col * (CELL_SIZE + CELL_SPACING),
+        y: row * (CELL_SIZE + CELL_SPACING)
+      });
+
+      maxClusterHeight = Math.max(maxClusterHeight, (row + 1) * (CELL_SIZE + CELL_SPACING));
+    });
+
+    clusterOffsetX += (clusterCols * (CELL_SIZE + CELL_SPACING)) + CELL_SPACING * 2;
+  });
+
+  return positions;
+}
+
+function renderMap() {
+  const container = document.getElementById('map-container');
+  const locationSpan = document.getElementById('current-map-location');
+
+  // Filter entities based on current map parent
+  let locationsToShow, charactersToShow, itemsToShow, containersToShow, connectionsToShow;
+
+  if (currentMapParentId === null) {
+    // World view: show top-level locations only
+    locationsToShow = allLocations.filter(l => !l.parent_location_id);
+    charactersToShow = [];
+    itemsToShow = [];
+    containersToShow = [];
+    connectionsToShow = allConnections.filter(c => {
+      const fromLoc = allLocations.find(l => l.id === c.from_location_id);
+      return fromLoc && !fromLoc.parent_location_id;
+    });
+    locationSpan.textContent = '[World View]';
+  } else {
+    // Location view: show children of current location
+    locationsToShow = allLocations.filter(l => l.parent_location_id === currentMapParentId);
+
+    // Show characters, items, containers in this location
+    charactersToShow = allCharacters.filter(c => c.location_id === currentMapParentId);
+    itemsToShow = allItems.filter(i => i.location_id === currentMapParentId);
+    containersToShow = allContainers.filter(c => c.location_id === currentMapParentId);
+
+    // Show connections between sibling locations
+    const siblingIds = locationsToShow.map(l => l.id);
+    connectionsToShow = allConnections.filter(c =>
+      siblingIds.includes(c.from_location_id) && siblingIds.includes(c.to_location_id)
+    );
+
+    const currentLocation = allLocations.find(l => l.id === currentMapParentId);
+    locationSpan.textContent = currentLocation ? currentLocation.name : '[Unknown]';
+  }
+
+  // Calculate dynamic layout
+  const positions = layoutLocations(locationsToShow, connectionsToShow);
+  const positionMap = {};
+  positions.forEach(p => {
+    positionMap[p.id] = { x: p.x + PADDING, y: p.y + PADDING };
+  });
+
+  // Calculate canvas size
+  let maxX = 0, maxY = 0;
+  positions.forEach(p => {
+    maxX = Math.max(maxX, p.x + CELL_SIZE + PADDING * 2);
+    maxY = Math.max(maxY, p.y + CELL_SIZE + PADDING * 2);
+  });
+
+  // Create map HTML
+  let html = '';
+
+  // Add SVG for connections (drawn first, under entities)
+  const svgWidth = Math.max(maxX, 1400);
+  const svgHeight = Math.max(maxY, 500);
+  html += `<svg style="position: absolute; top: 0; left: 0; width: ${svgWidth}px; height: ${svgHeight}px; pointer-events: none; z-index: 1;">`;
+
+  // Draw connection lines
+  connectionsToShow.forEach(conn => {
+    const from = positionMap[conn.from_location_id];
+    const to = positionMap[conn.to_location_id];
+    if (from && to) {
+      const fromX = from.x + CELL_SIZE / 2;
+      const fromY = from.y + CELL_SIZE / 2;
+      const toX = to.x + CELL_SIZE / 2;
+      const toY = to.y + CELL_SIZE / 2;
+
+      html += `<line x1="${fromX}" y1="${fromY}" x2="${toX}" y2="${toY}" stroke="#3b82f6" stroke-width="3" stroke-dasharray="${conn.is_bidirectional ? '0' : '5,5'}" />`;
+
+      if (!conn.is_bidirectional) {
+        // Add arrowhead for one-way connections
+        const angle = Math.atan2(toY - fromY, toX - fromX);
+        const arrowLen = 12;
+        const arrowX = toX - Math.cos(angle) * 20;
+        const arrowY = toY - Math.sin(angle) * 20;
+        html += `<polygon points="${toX},${toY} ${arrowX - Math.sin(angle) * arrowLen},${arrowY + Math.cos(angle) * arrowLen} ${arrowX + Math.sin(angle) * arrowLen},${arrowY - Math.cos(angle) * arrowLen}" fill="#3b82f6" />`;
+      }
+    }
+  });
+
+  html += `</svg>`;
+
+  // Add locations
+  locationsToShow.forEach(loc => {
+    const pos = positionMap[loc.id];
+    if (!pos) return;
+
+    html += `
+      <div class="map-entity map-location"
+           data-type="location"
+           data-id="${loc.id}"
+           style="position: absolute; left: ${pos.x}px; top: ${pos.y}px; width: ${CELL_SIZE}px; height: ${CELL_SIZE}px; z-index: 10;">
+        <div class="w-full h-full bg-green-700 border-2 border-green-500 hover:bg-green-600 cursor-pointer flex flex-col items-center justify-center text-white font-bold text-center p-2 overflow-hidden transition-colors">
+          <div class="w-full break-words text-sm leading-tight">${escapeHtml(loc.name)}</div>
+          <div class="text-xs text-green-300 mt-1 opacity-75">${escapeHtml(loc.location_type || '')}</div>
+        </div>
+      </div>
+    `;
+  });
+
+  // Add other entities (characters, items, containers) at bottom
+  const otherEntitiesY = maxY + PADDING;
+  let otherX = PADDING;
+  const SMALL_CELL = 80;
+  const SMALL_SPACING = 15;
+
+  // Add characters
+  charactersToShow.forEach((char, idx) => {
+    html += `
+      <div class="map-entity map-character"
+           data-type="character"
+           data-id="${char.id}"
+           style="position: absolute; left: ${otherX}px; top: ${otherEntitiesY}px; width: ${SMALL_CELL}px; height: ${SMALL_CELL}px; z-index: 10;">
+        <div class="w-full h-full bg-red-700 border-2 border-red-500 hover:bg-red-600 cursor-pointer flex items-center justify-center text-white font-bold text-center p-2 overflow-hidden transition-colors">
+          <div class="w-full break-words text-xs leading-tight">${escapeHtml(char.name)}</div>
+        </div>
+      </div>
+    `;
+    otherX += SMALL_CELL + SMALL_SPACING;
+  });
+
+  // Add items
+  itemsToShow.forEach((item, idx) => {
+    html += `
+      <div class="map-entity map-item"
+           data-type="item"
+           data-id="${item.id}"
+           style="position: absolute; left: ${otherX}px; top: ${otherEntitiesY}px; width: ${SMALL_CELL}px; height: ${SMALL_CELL}px; z-index: 10;">
+        <div class="w-full h-full bg-yellow-700 border-2 border-yellow-500 hover:bg-yellow-600 cursor-pointer flex items-center justify-center text-white font-bold text-center p-2 overflow-hidden transition-colors">
+          <div class="w-full break-words text-xs leading-tight">${escapeHtml(item.name)}</div>
+        </div>
+      </div>
+    `;
+    otherX += SMALL_CELL + SMALL_SPACING;
+  });
+
+  // Add containers
+  containersToShow.forEach((cont, idx) => {
+    html += `
+      <div class="map-entity map-container"
+           data-type="container"
+           data-id="${cont.id}"
+           style="position: absolute; left: ${otherX}px; top: ${otherEntitiesY}px; width: ${SMALL_CELL}px; height: ${SMALL_CELL}px; z-index: 10;">
+        <div class="w-full h-full bg-purple-700 border-2 border-purple-500 hover:bg-purple-600 cursor-pointer flex items-center justify-center text-white font-bold text-center p-2 overflow-hidden transition-colors">
+          <div class="w-full break-words text-xs leading-tight">${escapeHtml(cont.name)}</div>
+        </div>
+      </div>
+    `;
+    otherX += SMALL_CELL + SMALL_SPACING;
+  });
+
+  container.innerHTML = html;
+  // Don't set width - let it stay at 100% and scroll
+  // container.style.width stays at 100% from HTML
+  container.style.minHeight = Math.max(svgHeight, otherEntitiesY + SMALL_CELL + PADDING) + 'px';
+
+  // Add click handlers
+  document.querySelectorAll('.map-entity').forEach(entity => {
+    entity.addEventListener('click', (e) => {
+      const type = e.currentTarget.dataset.type;
+      const id = e.currentTarget.dataset.id;
+
+      if (type === 'location') {
+        // Double-click to drill down, single-click to edit
+        if (entity._clickTimeout) {
+          // Double click - drill down
+          clearTimeout(entity._clickTimeout);
+          entity._clickTimeout = null;
+          currentMapParentId = parseInt(id);
+          renderMap();
+        } else {
+          // Single click - edit
+          entity._clickTimeout = setTimeout(() => {
+            entity._clickTimeout = null;
+            showEditModal(type, id);
+          }, 300);
+        }
+      } else {
+        // Other entities - just edit
+        showEditModal(type, id);
+      }
+    });
+  });
+}
+
+// Add back button for map navigation
+document.getElementById('map-breadcrumb').addEventListener('click', () => {
+  if (currentMapParentId !== null) {
+    // Go back to parent
+    const allLocations = <%= @locations.map { |l| { id: l.id, parent_location_id: l.parent_location_id } }.to_json %>;
+    const currentLocation = allLocations.find(l => l.id === currentMapParentId);
+    currentMapParentId = currentLocation ? currentLocation.parent_location_id : null;
+    renderMap();
+  }
+});
+
+</script>
